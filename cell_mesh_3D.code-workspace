@@ -1,0 +1,14 @@
+
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+	"settings": {
+		// "fortran.linter.modOutput": "C:/Users/mw16116/OneDrive - University of Bristol/PhD/Cell_Mesher_3D/cell_mesh_3D/obj",
+		"fortran.linter.modOutput": "C:/Users/max/OneDrive - University of Bristol/PhD/Cell_Mesher_3D/cell_mesh_3D/obj",
+		// "fortran.linter.modOutput": "C:/Users/maxwo/OneDrive - University of Bristol/PhD/Cell_Mesher_3D/cell_mesh_3D/obj",
+		"makefile.extensionOutputFolder": "./.vscode"
+	}
+}
