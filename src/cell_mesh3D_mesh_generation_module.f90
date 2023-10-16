@@ -1,9 +1,9 @@
-!Cell Mesh 2D Cutcell Mesh Generation Module 
+!Cell Mesh 3D Cutcell Mesh Generation Module 
 !Max Wood - mw16116@bristol.ac.uk
 !Univeristy of Bristol - Department of Aerospace Engineering
 
-!Version 1.0
-!Updated 23-05-2023
+!Version 1.1
+!Updated 16-10-2023
 
 !Module
 module cellmesh3d_mesh_generation_mod
@@ -43,9 +43,7 @@ real(dp) :: global_target_pad
 type(tree_data) :: surface_adtree
 
 !Octree 
-integer(in), dimension(:), allocatable :: cell_keep,vtx_external,vtx_type1
 type(octree_data) :: ot_mesh
-
 
 !Initialisation -------------------------------------------------------
 if (cm3dopt%dispt == 1) then
@@ -53,7 +51,7 @@ if (cm3dopt%dispt == 1) then
     write(*,'(A)')'+--------------------------------------------+'
     write(*,'(A)')'|                Cell Mesh 3D                |'
     write(*,'(A)')'|         3D Cut-Cell Mesh Generator         |'
-    write(*,'(A)')'|        Version 0.0.1 || 31/05/2023         |'
+    write(*,'(A)')'|        Version 0.0.2 || 16/10/2023         |'
     write(*,'(A)')'|                 Max Wood                   |'
     write(*,'(A)')'|           University of Bristol            |'
     write(*,'(A)')'|    Department of Aerospace Engineering     |'
@@ -90,6 +88,14 @@ end if
 
 !Orient surface mesh for positive object volume (this ensures normal vector convention is correct)
 call orient_surface(surface_mesh,cm3dopt)
+
+!Build surface mesh connectivity 
+call get_valence(surface_mesh%valence,surface_mesh%maxValence,surface_mesh%connectivity,surface_mesh%nfcs,surface_mesh%nvtx)
+call construct_edges(surface_mesh%nedge,surface_mesh%edges,surface_mesh%valence,surface_mesh%nvtx,surface_mesh%nfcs,&
+surface_mesh%connectivity)
+call get_connectivity(surface_mesh%V2E,surface_mesh%V2F,surface_mesh%F2E,surface_mesh%E2F,surface_mesh%valence,&
+surface_mesh%maxvalence,surface_mesh%nedge,surface_mesh%nfcs,surface_mesh%nvtx,surface_mesh%edges,surface_mesh%connectivity)
+call construct_surface_normals(surface_mesh)
 
 !Evaluate surface mesh face curvature 
 call evaluate_surf_rcurv(surface_mesh,cm3dopt)
@@ -149,19 +155,12 @@ if (cm3dfailure == 1) then
     return 
 end if 
 
-!Identify geometry internal, external and overlapping cells
-call octree_mesh_trim2geom(cell_keep,vtx_external,vtx_type1,ot_mesh,surface_mesh,surface_adtree,cm3dopt,cm3dfailure) 
-if (cm3dfailure == 1) then 
-    return 
-end if
-
 !Construct volume mesh -------------------------------------------------------
 !Build mesh
-if (cm3dopt%dispt == 1) then
-    write(*,'(A)') '--> constructing full volume mesh'
-end if
-call construct_mesh(volume_mesh,cell_keep,vtx_external,vtx_type1,ot_mesh,surface_mesh,surface_adtree,cm3dopt,&
-                    cm3dfailure)
+! if (cm3dopt%dispt == 1) then
+!     write(*,'(A)') '--> constructing full volume mesh: '
+! end if
+call construct_mesh(volume_mesh,ot_mesh,surface_mesh,surface_adtree,cm3dopt,cm3dfailure)
 if (cm3dfailure == 1) then 
     return 
 end if
@@ -169,8 +168,10 @@ end if
 !Ensure contiguous cell indecies 
 call remap_cell_indecies(volume_mesh)
 
-!Remove any zero area faces 
-call remove_zero_area_faces(volume_mesh,cm3dopt)
+!Remap vertices 
+
+
+
 
 !Postprocess complete mesh ---------------------------------------------------
 ! ! !Apply custom boundary conditions conditions in target regions 
@@ -206,12 +207,16 @@ end if
 !Check for and correct bisected cells 
 call correct_bisected_cells(volume_mesh,cm3dopt)
 
+!Remove mesh internal valence two vertices 
+call clean_vlnc2_vertices(volume_mesh,cm3dopt,0_in) 
+
 !Simplify the mesh surface within each cell if simplified surface requested
 if (cm3dopt%surface_type == 0) then     
     if (cm3dopt%dispt == 1) then
         write(*,'(A)') '--> constructing simplified surface geometry'
     end if
     call simplify_surface(volume_mesh,cm3dopt,cm3dfailure)
+    call clean_vlnc2_vertices(volume_mesh,cm3dopt,1_in) !surface vertices
     if (cm3dfailure == 1) then 
         return 
     end if 
@@ -242,20 +247,37 @@ call remap_cell_indecies(volume_mesh)
 ! ! !Build surface vertex mappings 
 ! ! call build_surface_links(volume_mesh,surface_mesh)
 
-! ! !Flip surface and boundary normals if requested (both are constructed in state 'in')
-! ! if (cm2dopt%surface_dir == 'out') then 
-! !     call flip_set_edges(volume_mesh,-1_in)
-! ! end if 
-! ! if (cm2dopt%boundary_dir == 'out') then 
-! !     call flip_set_edges(volume_mesh,-2_in)
-! !     call flip_set_edges(volume_mesh,-3_in)
-! !     call flip_set_edges(volume_mesh,-4_in)
-! !     call flip_set_edges(volume_mesh,-5_in)
-! !     call flip_set_edges(volume_mesh,-6_in)
-! ! end if 
+!Flip surface and boundary normals if requested (both are constructed in state 'in')
+if (cm3dopt%surface_dir == 'out') then 
+    call flip_set_faces(volume_mesh,-1_in)
+end if 
+if (cm3dopt%boundary_dir == 'out') then 
+    call flip_set_faces(volume_mesh,-2_in)
+    call flip_set_faces(volume_mesh,-3_in)
+    call flip_set_faces(volume_mesh,-4_in)
+    call flip_set_faces(volume_mesh,-5_in)
+    call flip_set_faces(volume_mesh,-6_in)
+end if 
+
+!Restructure mesh for SU2 output formats 
+if (cm3dopt%meshfrmat == 'su2_dual') then 
+    call construct_dual_mesh(volume_mesh)
+end if 
+
+!Remove any zero area faces 
+call remove_zero_area_faces(volume_mesh,cm3dopt) !========================================
 
 !Evaluate cell volumes to check for invalid cells 
 call get_cell_volumes(Cvol,volume_mesh)
+
+!Set mesh and surface face counts
+volume_mesh%nface_surface = 0 
+do ii=1,volume_mesh%nface
+    if ((volume_mesh%faces(ii)%cleft .LT. 0) .OR. (volume_mesh%faces(ii)%cright .LT. 0)) then
+        volume_mesh%nface_surface = volume_mesh%nface_surface + 1
+    end if 
+end do 
+volume_mesh%nface_mesh = volume_mesh%nface - volume_mesh%nface_surface
 
 !Completion of mesh construction display ----------------------
 if (cm3dopt%dispt == 1) then
@@ -272,8 +294,10 @@ end if
 if (minval(Cvol) .LE. 0.0d0) then 
     cm3dfailure = 1
     do ii=1,volume_mesh%ncell
-        if (Cvol(ii) .LE. 0.0d0) then 
+        if (Cvol(ii) .LT. 0.0d0) then 
             print '(A,I0)', '** negative volume cell identified: ',ii
+        elseif (Cvol(ii) == 0.0d0) then  
+            print '(A,I0)', '** zero volume cell identified: ',ii
         end if 
     end do 
 end if  

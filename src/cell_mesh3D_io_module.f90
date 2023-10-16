@@ -99,6 +99,11 @@ allocate(character(len=len_trim(rtemp)) :: cm3dopt%boundary_dir)
 cm3dopt%boundary_dir = rtemp(1:len_trim(rtemp))
 read(11,*) !skip
 read(11,*) !skip
+read(11,*) rtemp
+allocate(character(len=len_trim(rtemp)) :: cm3dopt%meshfrmat)
+cm3dopt%meshfrmat = rtemp(1:len_trim(rtemp))
+read(11,*) !skip
+read(11,*) !skip
 read(11,*) !skip
 
 read(11,*) cm3dopt%Nrefine
@@ -151,10 +156,10 @@ read(11,*) !skip
 read(11,*) cm3dopt%surface_type
 read(11,*) !skip
 read(11,*) !skip 
-read(11,*) cm3dopt%surfRcurvM
+read(11,*) cm3dopt%surf_force_simplify
 read(11,*) !skip
 read(11,*) !skip 
-read(11,*) cm3dopt%surfRcurvNpts
+read(11,*) cm3dopt%surfRcurvM
 read(11,*) !skip
 read(11,*) !skip
 read(11,*) !skip

@@ -2,8 +2,8 @@
 %Max Wood - mw16116@bristol.ac.uk
 %Univeristy of Bristol - Department of Aerospace Engineering
 
-%Version 1.2
-%Updated 01-08-2023
+%Version 1.4
+%Updated 27-09-2023
 
 %Function -----------------------------------------------------------------
 function [] = write_input_file_cm3d(cm3dop)
@@ -31,6 +31,9 @@ fid = fopen('io\cell_mesh3d_options.dat','w+');
     fprintf(fid,'%s \n',' '); 
     fprintf(fid,'%s \n','#Boundary normal direction switch in to / out of the mesh domain (default in)');
     fprintf(fid,'%s \n',cm3dop.boundary_dir);
+    fprintf(fid,'%s \n',' '); 
+    fprintf(fid,'%s \n','#Mesh output format (cutcell / su2_dual)');
+    fprintf(fid,'%s \n',cm3dop.meshfrmat);
     fprintf(fid,'%s \n',' '); 
 
     fprintf(fid,'%s \n','#=== Octree Options ==================================');
@@ -84,11 +87,11 @@ fid = fopen('io\cell_mesh3d_options.dat','w+');
     fprintf(fid,'%s \n','#Geometry surface type (0 = simplified | 1 = exact)');
     fprintf(fid,'%d \n',cm3dop.surftype);
     fprintf(fid,'%s \n',' ');   
+    fprintf(fid,'%s \n','#Force simplification of all surface cells (1 = yes || 0 = no)');
+    fprintf(fid,'%d \n',cm3dop.force_simplify);
+    fprintf(fid,'%s \n',' ');  
     fprintf(fid,'%s \n','#Surface curvature multiplier');
     fprintf(fid,'%f \n',cm3dop.surfRcurvM);
-    fprintf(fid,'%s \n',' ');  
-    fprintf(fid,'%s \n','#Number of vertices used to estimate local surface curvaturer');
-    fprintf(fid,'%d \n',cm3dop.surfRcurvNpts);
     fprintf(fid,'%s \n',' ');  
 
     fprintf(fid,'%s \n','#=== Mesh Smoothing Options ==========================');

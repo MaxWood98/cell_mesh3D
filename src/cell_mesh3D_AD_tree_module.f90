@@ -447,7 +447,7 @@ integer(in) :: node_overlap
 !Initialise
 nselected = 0
 Nvisit = 0
-node_select(:) = 0
+! node_select(:) = 0
 
 !Set current node to search
 current_child(1) = 1
@@ -525,7 +525,7 @@ integer(in) :: node_overlap
 !Initialise
 nselected = 0
 Nvisit = 0
-node_select(:) = 0
+! node_select(:) = 0
 
 !Set current node to search
 current_child(1) = 1
@@ -684,7 +684,7 @@ real(dp) :: v1(2),v2(2),v3(2),v4(2),child_dists(2)
 !Initialise
 nselected = 0
 Nvisit = 0
-node_select(:) = 0
+! node_select(:) = 0
 
 !Set initial distance 
 distmin = distref
@@ -826,7 +826,7 @@ real(dp) :: v1(2),v2(2),v3(2),v4(2),child_dists(2)
 !Initialise
 nselected = 0
 Nvisit = 0
-node_select(:) = 0
+! node_select(:) = 0
 
 !Set initial distance 
 distmin = distref
@@ -972,7 +972,7 @@ real(dp) :: v1(2),v2(2),v3(2),v4(2)
 !Initialise
 nselected = 0
 Nvisit = 0
-node_select(:) = 0
+! node_select(:) = 0
 
 !Set current node to search
 current_child(1) = 1

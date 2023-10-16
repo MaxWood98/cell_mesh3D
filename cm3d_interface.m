@@ -11,6 +11,8 @@ clc
 
 %TODO
 
+%  remove zero area faces
+
 
 %% Input
 
@@ -23,31 +25,32 @@ cm3dop.meshtype = 0;          %Type of mesh (0 = cutcell | 1 = minD block mesh)
 cm3dop.meshinout = 'out';     %Mesh inside or outside of geometry (default out)
 cm3dop.surface_dir = 'in';    %Surface normal direction switch in to / out of the mesh domain (default in)
 cm3dop.boundary_dir = 'in';   %Boundary normal direction switch in to / out of the mesh domain (default in)
+cm3dop.meshfrmat = 'cutcell';    %Mesh output format (cutcell / su2_dual)
 
 %Cut-Cell mesh options ====================================================
 %Octree options
-cm3dop.nrefine = 8;           %Maximum refinement level 
-cm3dop.nrefineB = 5;          %Maximum additional refinement levels in high curvature regions
-cm3dop.ncell_max = 2000000;    %Maximum number of cells
-cm3dop.nrflood_i = 3;         %Refinement adjacency flooding iterations at the first refinement
-cm3dop.nrflood_f = 3;         %Refinement adjacency flooding iterations at the final refinement
-cm3dop.nrflood_b = 5;         %Refinement adjacency flooding iterations on boosted refinement
-cm3dop.fbound = 2;            %Far field distance from object centre  
-cm3dop.coffset = [0.0 1.77 0.0];   %Object/mesh centre offset (x / y / z)
+cm3dop.nrefine = 5;           %Maximum refinement level 
+cm3dop.nrefineB = 0;          %Maximum additional refinement levels in high curvature regions
+cm3dop.ncell_max = 5000000;   %Maximum number of cells
+cm3dop.nrflood_i = 1;         %Refinement adjacency flooding iterations at the first refinement
+cm3dop.nrflood_f = 1;         %Refinement adjacency flooding iterations at the final refinement
+cm3dop.nrflood_b = 1;         %Refinement adjacency flooding iterations on boosted refinement
+cm3dop.fbound = 1;           %Far field distance from object centre  
+cm3dop.coffset = [0.0 0.0 0.0];   %Object/mesh centre offset (x / y / z)
 
 %Mesh cleaning options
 cm3dop.fminarea = 1e-8;        %Minimum face area as a fraction of an undeformed cell face area at each refienemnt level 
 cm3dop.cminvol = 0.01;         %Volume fraction of an undeformed cell at each refinement level below which a cell is classed as a sliver cell
 
 %Mesh geometry intersection options
-cm3dop.enintmax = 10;         %Maximum number of mesh-geometry intersections on each mesh edge 
+cm3dop.enintmax = 20;         %Maximum number of mesh-geometry intersections on each mesh edge 
 cm3dop.eintpad = 0.0;         %Edge-geometry intersection search zone padding as a fraction of the edge length 
 cm3dop.int_coin_tol = 1e-8;   %Intersection co-incidence tollerance as fraction of item length  
 
 %Surface format options
 cm3dop.surftype = 0;          %Geometry surface type (0 = 'simplified' | 1 = 'exact') 
-cm3dop.surfRcurvM = 2.0;      %Surface curvature multiplier
-cm3dop.surfRcurvNpts = 10;    %Number of vertices used to estimate local surface curvature ==============
+cm3dop.force_simplify = 1;    %Force simplification of all surface cells (1 = yes || 0 = no)
+cm3dop.surfRcurvM = 4.0;      %Surface curvature multiplier
 
 %Mesh smoothing options
 cm3dop.nsstype = 0;           %Near surface smoothing type (0 = 'none' | 1 = 'Laplacian')
@@ -115,7 +118,7 @@ cla reset
 hold on
 
 %Plot mesh (full)
-% patch('vertices',vertices_m,'faces',faces_m,'EdgeAlpha',1.0,'Marker','none','facecolor',[0.8 0.8 0.8],'facealpha',0.0);
+patch('vertices',vertices_m,'faces',faces_m,'EdgeAlpha',1.0,'Marker','none','facecolor',[0.8 0.8 0.8],'facealpha',0.0);
 % patch('vertices',vertices_m,'faces',faces_m(33978,:),'EdgeAlpha',1.0,'Marker','*','facecolor',[0.9 0.1 0.1],'facealpha',1.0);
 
 %Plot mesh (volume and surface)
@@ -123,11 +126,11 @@ hold on
 % patch('vertices',vertices_m,'faces',faces_m(Nface_mesh_m+1:Nface_m,:),'EdgeAlpha',0.5,'Marker','none','facecolor',[1.0 0.8 0.8],'facealpha',1.0);
 
 %Read input surface file 
-[~,~,vertices,connectivity] = import_cell_mesh3d_surface();
+% [~,~,vertices,connectivity] = import_cell_mesh3d_surface();
 
 %Plot object surface 
 % patch('vertices',vertices,'faces',connectivity,'FaceColor',[1.0 0.8 0.8],'EdgeColor',[1.0 0.8 0.8],'EdgeAlpha',1.0,'FaceAlpha',1.0);
-% patch('vertices',vertices,'faces',connectivity,'FaceColor',[1.0 0.8 0.8],'EdgeColor',[0.2 0.2 0.2],'EdgeAlpha',1.0,'FaceAlpha',1.0);
+% patch('vertices',vertices,'faces',connectivity,'FaceColor',[0.9 0.8 1.0],'EdgeColor',[0.2 0.2 0.2],'EdgeAlpha',1.0,'FaceAlpha',1.0);
 % patch('vertices',vertices,'faces',connectivity(12049,:),'FaceColor',[1.0 0.0 0.0],'EdgeAlpha',1.0,'FaceAlpha',1.0);
 % vtgt = 10724;
 % plot3(vertices(vtgt,1),vertices(vtgt,2),vertices(vtgt,3),'r*')
@@ -135,14 +138,57 @@ hold on
 % plot3(vertices(vtgt,1),vertices(vtgt,2),vertices(vtgt,3),'g*')
 
 
-%Plot boundary conditions 
+% %Debug surface
+% [valence,MaxValence] = get_valence(connectivity);
+% [edges] = construct_edges(connectivity,MaxValence);
+% [V2V,V2E,V2F,F2E,E2F,Npf] = get_connectivity(connectivity,edges,valence,MaxValence);
+% nedgeshell = 0;
+% for ee=1:length(edges)
+%     if E2F(ee,1) == 0 || E2F(ee,2) == 0
+%         nedgeshell = nedgeshell + 1;
+%     end
+% end
+% edges_shell = zeros(nedgeshell,2);
+% nedgeshell = 0;
+% for ee=1:length(edges)
+%     if E2F(ee,1) == 0 || E2F(ee,2) == 0
+%         nedgeshell = nedgeshell + 1;
+%         edges_shell(nedgeshell,:) = edges(ee,:);
+%     end
+% end
+% patch('vertices',vertices,'faces',edges_shell,'EdgeColor',[1.0 0.0 0.0],'EdgeAlpha',1.0,'FaceAlpha',1.0);
+
+
+
+
+%Plot mesh surfaces 
+Nwallface = 0;
+for ii=1:Nface_m
+    if cell_lr_m(ii,1) == -1 %wall
+        Nwallface = Nwallface + 1;
+    end 
+end
+[~,nc] = size(faces_m);
+faces_wall = zeros(Nwallface,nc);
+Nwallface = 0;
+for ii=1:Nface_m
+    if cell_lr_m(ii,1) == -1 %wall
+        Nwallface = Nwallface + 1;
+        faces_wall(Nwallface,:) = faces_m(ii,:);
+    end 
+end
+patch('vertices',vertices_m,'faces',faces_wall,'EdgeAlpha',1.0,'Marker','none','facecolor',[1.0 0.8 0.8],'facealpha',1.0);
+
+
+% %Plot boundary conditions 
 % for ii=1:Nface_m
 %     if cell_lr_m(ii,1) == -1 %wall
 %         % patch('vertices',vertices_m,'faces',faces_m(ii,:),'EdgeAlpha',1.0,'Marker','none','Edgecolor','c');
+%         patch('vertices',vertices_m,'faces',faces_m(ii,:),'EdgeAlpha',1.0,'Marker','none','facecolor',[1.0 0.8 0.8],'facealpha',1.0);
 %     elseif cell_lr_m(ii,1) == -2 %far field
 %         % patch('vertices',vertices_m,'faces',faces_m(ii,:),'EdgeAlpha',1.0,'Marker','none','Edgecolor','b');
 %     elseif cell_lr_m(ii,2) == -3 || cell_lr_m(ii,2) == -5 %inflow
-%         patch('vertices',vertices_m,'faces',faces_m(ii,:),'EdgeAlpha',1.0,'Marker','none','facecolor','g');
+%         % patch('vertices',vertices_m,'faces',faces_m(ii,:),'EdgeAlpha',1.0,'Marker','none','facecolor','g');
 %     elseif cell_lr_m(ii,1) == -4 || cell_lr_m(ii,1) == -6 %outflow
 %         % patch('vertices',vertices_m,'faces',faces_m(ii,:),'EdgeAlpha',1.0,'Marker','none','Edgecolor','r');
 %     end
@@ -273,23 +319,23 @@ hold on
 
 
 
-%Plot volume mesh surface
-Nfsurf = 0;
-for ff=1:Nface_m
-    if cell_lr_m(ff,1) == -1 || cell_lr_m(ff,2) == -1
-        Nfsurf = Nfsurf + 1;
-    end
-end
-[~,npmaxfm] = size(faces_m);
-faces_mS = zeros(Nfsurf,npmaxfm);
-Nfsurf = 0;
-for ff=1:Nface_m
-    if cell_lr_m(ff,1) == -1 || cell_lr_m(ff,2) == -1
-        Nfsurf = Nfsurf + 1;
-        faces_mS(Nfsurf,:) = faces_m(ff,:);
-    end
-end
-patch('vertices',vertices_m,'faces',faces_mS,'Marker','none','facecolor',[0.6 0.6 0.8],'facealpha',1.0,'edgecolor',[0.0 0.0 0.0],'EdgeAlpha',1.0);
+% %Plot volume mesh surface
+% Nfsurf = 0;
+% for ff=1:Nface_m
+%     if cell_lr_m(ff,1) == -1 || cell_lr_m(ff,2) == -1
+%         Nfsurf = Nfsurf + 1;
+%     end
+% end
+% [~,npmaxfm] = size(faces_m);
+% faces_mS = zeros(Nfsurf,npmaxfm);
+% Nfsurf = 0;
+% for ff=1:Nface_m
+%     if cell_lr_m(ff,1) == -1 || cell_lr_m(ff,2) == -1
+%         Nfsurf = Nfsurf + 1;
+%         faces_mS(Nfsurf,:) = faces_m(ff,:);
+%     end
+% end
+% patch('vertices',vertices_m,'faces',faces_mS,'Marker','none','facecolor',[0.6 0.6 0.8],'facealpha',1.0,'edgecolor',[0.0 0.0 0.0],'EdgeAlpha',1.0);
 
 
 
@@ -349,6 +395,12 @@ patch('vertices',vertices_m,'faces',faces_mS,'Marker','none','facecolor',[0.6 0.
 % vtxext = load('io/vtxexternal.dat');
 % plot3(vtxext(:,1),vtxext(:,2),vtxext(:,3),'ro')
 
+% vm_surf_intersect_in = load('io/vm_surf_intersect_in.dat');
+% plot3(vm_surf_intersect_in(:,1),vm_surf_intersect_in(:,2),vm_surf_intersect_in(:,3),'g.','MarkerSize',20)
+% 
+% vm_surf_intersect_out = load('io/vm_surf_intersect_out.dat');
+% plot3(vm_surf_intersect_out(:,1),vm_surf_intersect_out(:,2),vm_surf_intersect_out(:,3),'r.','MarkerSize',20)
+
 % vtxp = load('io/vtx2pert.dat');
 % plot3(vtxp(:,1),vtxp(:,2),vtxp(:,3),'r*')
 
@@ -373,6 +425,9 @@ patch('vertices',vertices_m,'faces',faces_mS,'Marker','none','facecolor',[0.6 0.
 %     end
 % end
 
+
+
+
 % %Test import mesh
 % vertices_mt = load('io/mesh_test_vtx');
 % cell_lr_m = load('io/cell_lr');
@@ -395,7 +450,18 @@ patch('vertices',vertices_m,'faces',faces_mS,'Marker','none','facecolor',[0.6 0.
 % Nface_m = length(faces_mt(:,1));
 % 
 % %Test plot mesh 
-% patch('vertices',vertices_mt,'faces',faces_mt(:,:),'EdgeAlpha',0.3,'Marker','none','facecolor',[0.8 0.8 0.8],'facealpha',0.0);
+% patch('vertices',vertices_mt,'faces',faces_mt(:,:),'EdgeAlpha',1.0,'Marker','none','facecolor',[0.8 0.8 0.8],'facealpha',0.0);
+
+
+
+% patch('vertices',vertices_mt,'faces',faces_mt(60678,:),'EdgeAlpha',0.3,'Marker','none','facecolor',[0.8 0.8 0.8],'facealpha',1.0);
+
+
+% vtgt = 764;
+% plot3(vertices_mt(vtgt,1),vertices_mt(vtgt,2),vertices_mt(vtgt,3),'r.','markersize',30)
+% vtgt = 1209;
+% plot3(vertices_mt(vtgt,1),vertices_mt(vtgt,2),vertices_mt(vtgt,3),'r.','markersize',30)
+
 
 
 
@@ -408,6 +474,32 @@ patch('vertices',vertices_m,'faces',faces_mS,'Marker','none','facecolor',[0.6 0.
 % 
 % vmsint_vtx = load('io/vmsint_vtx.dat');
 % plot3(vmsint_vtx(:,1),vmsint_vtx(:,2),vmsint_vtx(:,3),'go','markersize',20)
+% 
+
+
+
+
+
+
+
+
+
+
+% vt1 = [1.2915810758870001       0.94783107588700011        1.0000000000000000];
+% vt2 = [1.3228310758870001       0.97908107588700011        1.0000000000000000];
+% vt3 = [1.3228310758870001       0.94783107588700011        1.0000000000000000];
+% vtri = [vt1 ; vt2 ; vt3];
+% tri = [1 2 3];
+% 
+% vl1 = [1.2812500000000000        1.0312500000000000        1.0000000000000000];
+% vl2 = [1.2812500000000000       0.96875000000000000        1.0000000000000000];
+% 
+% 
+% patch('Faces',tri,'Vertices',vtri,'facealpha',1.0,'linewidth',4);
+% plot3([vl1(1),vl2(1)],[vl1(2),vl2(2)],[vl1(3),vl2(3)],'r','linewidth',4)
+
+
+
 
 
 
@@ -447,7 +539,7 @@ patch('vertices',vertices_m,'faces',faces_mS,'Marker','none','facecolor',[0.6 0.
 % a = faces_m(138497,:)
 
 
-%Plot clipped face
+% %Plot clipped face
 % face_ledge = load('io/face_cvtx.dat');
 % for ee=1:length(face_ledge(:,1))
 %     etgt = ee;
@@ -455,15 +547,108 @@ patch('vertices',vertices_m,'faces',faces_mS,'Marker','none','facecolor',[0.6 0.
 % end
 
 
-% %Plot cell test
-% ctgt = 59;
+% 
+% ftemp = [35625        ,        35629 ]; %edge = 77365
+% patch('vertices',vertices_mt,'faces',ftemp,'EdgeAlpha',0.3,'Marker','none','facecolor',[0.8 0.8 0.8],'facealpha',1.0,'linewidth',10,'edgecolor',[0.0 1.0 0.0]);
+% 
+% % patch('vertices',vertices,'faces',connectivity(3512,:),'FaceColor',[0.0 1.0 0.0],'EdgeColor',[0.2 0.2 0.2],'EdgeAlpha',1.0,'FaceAlpha',1.0,'linewidth',10);
+% patch('vertices',vertices,'faces',connectivity(3512,:),'FaceColor',[0.0 1.0 0.0],'EdgeColor',[0.2 0.2 0.2],'EdgeAlpha',1.0,'FaceAlpha',1.0,'linewidth',10);
+
+
+
+% plot3(1.5527000000000002  ,     -1.0495206896551722E-002  , 2.1232724137931038,'m*','markersize',20)
+ 
+% plot3( 2.9843750000000000      , -6.2500000000000000E-002  , 1.2031250000000000,'b.','markersize',20)
+% 
+% plot3( 2.9062500000000000     ,  -6.2500000000000000E-002 ,  1.2031250000000000,'r.','markersize',20)
+
+
+
+
+
+% 
+% plot3(0.94153774212829455    ,   0.94153774212829455    ,   0.12500000000000000,'b.','markersize',20)
+% 
+% plot3(0.93697673188257513     ,  0.94561124771526206   ,    0.12500000000000000  ,'r.','markersize',20)
+
+% plot3(0.77083333333333326     ,   3.1250000000000000E-002  ,-8.0420674442339191E-002,'go','markersize',20)
+
+
+
+% plot3(-8.7500000000000022E-002 ,-0.15625000000000000  ,     -6.8854323241252541E-002,'g.','markersize',20 )
+
+
+
+
+
+
+% plot3(0.22908107588700011   ,    0.19783107588700011    ,   0.31189028548745024,'g*','markersize',20)
+
+% plot3( 7.9653074317460320    ,    6.5761128142857128    ,   0.42806900000000064,'g.','markersize',20)
+
+
+% plot3(1.6728170745099999    ,    1.0972433068080001    ,   0.28360920637100001,'go','markersize',20)
+% plot3(1.6317950650719999    ,    1.1437954251319999    ,   0.24137597623900001,'bo','markersize',20)
+
+
+
+
+% plot3(1.1353310758870001    ,    1.1353310758870001   ,     0.0000000000000000,'g.','markersize',20)
+% plot3(1.1353310758870001   ,    0.88533107588700011   ,     0.0000000000000000,'b.','markersize',20)
+
+
+% plot3(0.13533107588700011   ,    0.13533107588700011   ,    0.93590382489709012,'g.','markersize',20)
+% plot3(0.13533107588700011    ,   0.13533107588700011   ,    0.83409562974415385,'b.','markersize',20)
+
+
+% plot3(1.5218156744843481   ,    0.47908107588700005   ,    0.53125000000000000,'g.','markersize',20)
+% plot3(1.5218156744843483    ,   0.47908107588700005   ,    0.53124999999999989,'go','markersize',10)
+
+%Plot cell test
+% ctgt = 140819;
+% ctgt = 140820;
+% ctgt = 80682;
+% ctgt = 140756;
+% ctgt = 131375;
+% ctgt = 128393;
 % for ii=1:Nface_m
 %     if cell_lr_m(ii,1) == ctgt || cell_lr_m(ii,2) == ctgt
-%         ii
-%         disp(['cell LR = ',num2str(cell_lr_m(ii,1)),'/',num2str(cell_lr_m(ii,2))])
-%         patch('vertices',vertices_m,'faces',faces_m(ii,:),'FaceAlpha',0.5,'EdgeAlpha',1.0,'Marker','*','facecolor','g');
+%         %ii
+%         disp(['face = ',num2str(ii)])
+%         % disp(['cell LR = ',num2str(cell_lr_m(ii,1)),'/',num2str(cell_lr_m(ii,2))])
+%         patch('vertices',vertices_m,'faces',faces_m(ii,:),'FaceAlpha',0.5,'EdgeAlpha',1.0,'Marker','*','facecolor','g','linewidth',4);
 %     end
 % end 
+
+
+% patch('vertices',vertices_m,'faces',faces_m(401880,:),'FaceAlpha',1.0,'EdgeAlpha',1.0,'Marker','.','facecolor','r','linewidth',4);
+
+
+% %plot cell with no surface 
+% ctgt = 128390;
+% for ii=1:Nface_m
+%     if cell_lr_m(ii,1) == ctgt || cell_lr_m(ii,2) == ctgt
+%         if cell_lr_m(ii,1) ~= -1 && cell_lr_m(ii,2) ~= -1
+%             %ii
+%             disp(['face = ',num2str(ii)])
+%             % disp(['cell LR = ',num2str(cell_lr_m(ii,1)),'/',num2str(cell_lr_m(ii,2))])
+%             patch('vertices',vertices_m,'faces',faces_m(ii,:),'FaceAlpha',0.5,'EdgeAlpha',1.0,'Marker','*','facecolor','g','linewidth',4);
+%         end
+%     end
+% end 
+% 
+% 
+% 
+% 
+% %Find cells on a vertex
+% vtgt = 199835;
+% for ii=1:Nface_m
+%     if any(faces_m(ii,:)== vtgt) 
+%         cell_lr_m(ii,:)
+%     end
+% end 
+
+
 
 
 % nl = 100;
@@ -530,25 +715,61 @@ hold off
 
 % axis([0.4560    0.5155    0.1307    0.1776    0.0685    0.1155]);
 
+% axis([0.1989    0.2585    0.1868    0.2491    0.2661    0.3257]);
+% view(71.4170,10.3986)
+
+% axis([1.2261    1.3940    0.7593    0.8917    0.8934    1.0259])
+% axis([1.0481    1.2868    0.8570    1.1070    0.8508    1.0895])
+% axis([0.9094    1.3538    0.9464    1.4118    0.9183    1.3627])
+
+% axis([1.0343    1.3642    0.9156    1.2611   -0.2611    0.0688]);
+
+% axis([1.5812    1.7625    1.0392    1.2064    0.1600    0.3272]);
+
+
+
+
+% axis([13.4745   13.4933    2.2882    2.3030    3.1870    3.2018]);
+% axis([13.3809   13.5177    2.2308    2.3385    3.1408    3.2485]); %fclipped
+
+
+% axis([6.6608    7.3060    0.2598    0.6001   -0.8147   -0.4745])
+
+
+% axis([ -0.1058   -0.0639   -0.1828   -0.1388   -0.0899   -0.0479]);
+
+
+% axis([0.7478    0.7863    0.0081    0.0485   -0.0900   -0.0515]);
+
+
+% axis([0.9241    0.9567    0.9217    0.9558    0.1171    0.1497]);
+
+
+% axis([2.2917    3.3284   -0.7510    0.3346    0.6819    1.7186]);
+
+
+% axis([1.5027    1.6080   -0.0932    0.0170    2.0837    2.1616])
+
+
 %% 
 
 
-function [N] = newell_normal(Nvtxf,face_vtx,vertices) 
-
-    %Initialise 
-    N= zeros(1,3);
-    
-    %Accumulate normal vector to the face
-    for vv=1:Nvtxf
-        vc = vv; 
-        vn = mod(vv,Nvtxf) + 1;
-        vc = face_vtx(vc);
-        vn = face_vtx(vn);
-        vtxC(:) = vertices(vc,:);
-        vtxN(:) = vertices(vn,:);
-        N(1) = N(1) - 0.5*(vtxN(3) + vtxC(3))*(vtxN(2) - vtxC(2));
-        N(2) = N(2) - 0.5*(vtxN(1) + vtxC(1))*(vtxN(3) - vtxC(3));
-        N(3) = N(3) - 0.5*(vtxN(2) + vtxC(2))*(vtxN(1) - vtxC(1));
-    end 
-end 
+% function [N] = newell_normal(Nvtxf,face_vtx,vertices) 
+% 
+%     %Initialise 
+%     N= zeros(1,3);
+% 
+%     %Accumulate normal vector to the face
+%     for vv=1:Nvtxf
+%         vc = vv; 
+%         vn = mod(vv,Nvtxf) + 1;
+%         vc = face_vtx(vc);
+%         vn = face_vtx(vn);
+%         vtxC(:) = vertices(vc,:);
+%         vtxN(:) = vertices(vn,:);
+%         N(1) = N(1) - 0.5*(vtxN(3) + vtxC(3))*(vtxN(2) - vtxC(2));
+%         N(2) = N(2) - 0.5*(vtxN(1) + vtxC(1))*(vtxN(3) - vtxC(3));
+%         N(3) = N(3) - 0.5*(vtxN(2) + vtxC(2))*(vtxN(1) - vtxC(1));
+%     end 
+% end 
 

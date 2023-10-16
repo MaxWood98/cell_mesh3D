@@ -2,8 +2,8 @@
 !Max Wood - mw16116@bristol.ac.uk
 !Univeristy of Bristol - Department of Aerospace Engineering
 
-!Version 1.2
-!Updated 02-08-2023
+!Version 2.0
+!Updated 16-10-2023
 
 !Module
 module cellmesh3d_data_mod
@@ -17,13 +17,13 @@ use ISO_FORTRAN_ENV, only: dp=>real64
 use ISO_FORTRAN_ENV, only: qp=>real128     
 
 !Set round off error bound 
-real(dp), parameter :: min_precision = 1E-12_dp 
+real(dp), parameter :: min_precision = 2.0d0*epsilon(1.0d0)
 
 !Options data type
 type cm3d_options
-    character(len=:), allocatable :: iopath,optpath,surfacename,surface_dir,boundary_dir,meshinout
+    character(len=:), allocatable :: iopath,optpath,surfacename,surface_dir,boundary_dir,meshinout,meshfrmat
     integer(in) :: Nrefine,NrefineB,Ncell_max,Nrefine_flood_i,Nrefine_flood_f,Nrefine_flood_b,meshtype,surfRcurvNpts
-    integer(in) :: normDconv,NintEmax,glink_con,glink_nnn,glink_nsmooth,max_int_size
+    integer(in) :: normDconv,NintEmax,glink_con,glink_nnn,glink_nsmooth,max_int_size,surf_force_simplify
     integer(in) :: max_depth,dispt,nlpflood,nlpsmooth,surface_type,set_customBCs,remFFzones,zbndsiter
     integer(in) :: Nlevel,Nsmooth_Norm,Nsmooth_front,Ls_smooth_front,Nsstype,Nzone_cBC,remISzones
     integer(in) :: bc_xmin,bc_xmax,bc_ymin,bc_ymax,bc_zmin,bc_zmax
@@ -33,14 +33,13 @@ type cm3d_options
     real(dp) :: cell1h,cellh_gr,om_offset_x,om_offset_y,om_offset_z,intcointol
     real(dp), dimension(:,:), allocatable :: BC_zone_coords
     real(dp) :: mesh_xmin,mesh_xmax,mesh_ymin,mesh_ymax,mesh_zmin,mesh_zmax
-    
 end type cm3d_options
 
 !Mesh data type 
 type vol_mesh_data
     integer(in) :: nvtx,nedge,ncell,nface,nvtx_surf,nface_mesh,nface_surface
     integer(in), dimension(:), allocatable :: cell_level,vtx_surfseg,cell_otidx,vtx_type 
-    integer(in), dimension(:), allocatable :: surf_vtx,surf_vtx_seg,vmvtx_2_smvtx
+    integer(in), dimension(:), allocatable :: surf_vtx,surf_vtx_seg,vmvtx_2_smvtx,valence
     integer(in), dimension(:,:), allocatable :: edge,edges,E2F,V2E 
     real(dp), dimension(:), allocatable :: surf_vtx_segfrac,vtx_sRcurv
     real(dp), dimension(:,:), allocatable :: vtx,edge_normal
@@ -69,28 +68,30 @@ type surface_data
     integer(in) :: nvtx,nfcs,nobj,nedge,nvtxf,maxValence
     integer(in), dimension(:), allocatable :: vertex_obj,vncell,valence
     integer(in), dimension(:,:), allocatable :: connectivity,connectivityM,fesharp,edges,V2F,F2E,V2E,E2F,vcell
-    real(dp), dimension(:), allocatable :: vtx_rcurv,vtx_maxcurv,face_rcurv,face_maxcurv,vtx_rcurv_full
-    real(dp), dimension(:,:), allocatable :: vertices,face_ecurv,vertices_full
+    real(dp), dimension(:), allocatable :: vtx_rcurv,vtx_maxcurv,face_rcurv,face_maxcurv,vtx_rcurv_full,face_area
+    real(dp), dimension(:,:), allocatable :: vertices,face_ecurv,vertices_full,face_normal
     type(face_data), dimension(:), allocatable :: tri_clipped
 end type surface_data
 
 !Face data type
 type face_data
-    integer(in) :: nvtx,cleft,cright,nfclipped,cleft_ot,cright_ot,fot
+    character(len=3) :: ftype
+    integer(in) :: nvtx,cleft,cright,nfclipped,cleft_ot,cright_ot,fot,fparent
     integer(in), dimension(:), allocatable :: vertices,edges
     type(clipped_face_data), dimension(:), allocatable :: face_clipped
 end type face_data
 
 !Clipped face data type
 type clipped_face_data
-    integer(in) :: nvtx,cleft,cright
+    character(len=3) :: ftype
+    integer(in) :: nvtx,cleft,cright,fparent,fidx_final
     integer(in), dimension(:), allocatable :: vertices
 end type clipped_face_data
 
 !Octree data type 
 type octree_data
     integer(in) :: cins,vins,maxvalence,nedge 
-    integer(in), dimension(:), allocatable :: cell_level,cell_vcmid,vtx_valence,cell_parent
+    integer(in), dimension(:), allocatable :: cell_level,cell_vcmid,vtx_valence,cell_parent,cell_keep
     integer(in), dimension(:,:), allocatable :: V2V,edge_index,cell2edge
     integer(in), dimension(:,:), allocatable :: cell_vcnr,cell_vemid,cell_vfmid,cell_child,cell_adjacent,cell_diagonal
     real(dp), dimension(:,:), allocatable :: vtx
@@ -115,11 +116,12 @@ end type meshdata
 type edgeint 
     integer(in) :: type
     integer(in) :: nitem,nint,refend1
-    integer(in), dimension(:), allocatable :: vtx_idx,inttype,intidx,surfseg,int_seg_type,int_inout
+    integer(in), dimension(:), allocatable :: vtx_idx,inttype,intidx,surfseg,int_seg_type
     integer(in), dimension(:), allocatable :: vncell,nfint
     integer(in), dimension(:,:), allocatable :: edge_mesh,vcell,vmface
     real(dp), dimension(:), allocatable :: intfrac
     real(dp), dimension(:,:), allocatable :: intloc,intlocBC 
+    character(len=2), dimension(:), allocatable :: int_tri_loc,int_inout
 end type edgeint 
 
 !Edge intersection data type
