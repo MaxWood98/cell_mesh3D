@@ -2,8 +2,8 @@
 !Max Wood - mw16116@bristol.ac.uk
 !Univeristy of Bristol - Department of Aerospace Engineering
 
-!Version 2.0
-!Updated 16-10-2023
+!Version 2.2
+!Updated 24-10-2023
 
 !Module
 module cellmesh3d_data_mod
@@ -25,19 +25,19 @@ type cm3d_options
     integer(in) :: Nrefine,NrefineB,Ncell_max,Nrefine_flood_i,Nrefine_flood_f,Nrefine_flood_b,meshtype,surfRcurvNpts
     integer(in) :: normDconv,NintEmax,glink_con,glink_nnn,glink_nsmooth,max_int_size,surf_force_simplify
     integer(in) :: max_depth,dispt,nlpflood,nlpsmooth,surface_type,set_customBCs,remFFzones,zbndsiter
-    integer(in) :: Nlevel,Nsmooth_Norm,Nsmooth_front,Ls_smooth_front,Nsstype,Nzone_cBC,remISzones
+    integer(in) :: Nlevel,Nsmooth_Norm,Nsmooth_front,Ls_smooth_front,Nsstype,Nzone_cBC,remISzones,stnintmax
     integer(in) :: bc_xmin,bc_xmax,bc_ymin,bc_ymax,bc_zmin,bc_zmax
     integer(in), dimension(:), allocatable :: BC_zone_bc
-    real(dp) :: ad_padding,far_field_bound,FminArea,CminVol,elenpad,surfRcurvM
+    real(dp) :: ad_padding,far_field_bound,FminArea,CminVol,surfRcurvM
     real(dp) :: dsolve_kd,dsolve_cfl,dsolve_resconv,zangbnd,zlenmax,zlenmin
-    real(dp) :: cell1h,cellh_gr,om_offset_x,om_offset_y,om_offset_z,intcointol
+    real(dp) :: cell1h,cellh_gr,om_offset_x,om_offset_y,om_offset_z,intcointol,baryloctol
     real(dp), dimension(:,:), allocatable :: BC_zone_coords
     real(dp) :: mesh_xmin,mesh_xmax,mesh_ymin,mesh_ymax,mesh_zmin,mesh_zmax
 end type cm3d_options
 
 !Mesh data type 
 type vol_mesh_data
-    integer(in) :: nvtx,nedge,ncell,nface,nvtx_surf,nface_mesh,nface_surface
+    integer(in) :: nvtx,nedge,ncell,nface,nvtx_surf,nface_mesh,nface_surface,maxValence
     integer(in), dimension(:), allocatable :: cell_level,vtx_surfseg,cell_otidx,vtx_type 
     integer(in), dimension(:), allocatable :: surf_vtx,surf_vtx_seg,vmvtx_2_smvtx,valence
     integer(in), dimension(:,:), allocatable :: edge,edges,E2F,V2E 
@@ -45,7 +45,16 @@ type vol_mesh_data
     real(dp), dimension(:,:), allocatable :: vtx,edge_normal
     type(face_data), dimension(:), allocatable :: faces
     type(lsurface), dimension(:), allocatable :: lsurface
+    type(surfFvolinterp), dimension(:), allocatable :: vsinterp
 end type vol_mesh_data
+
+!Surface from volume interpolation type
+type surfFvolinterp
+    integer(in) :: npnts_vi,npnts_ss
+    integer(in), dimension(:), allocatable :: vol_pnts,surf_smooth_pnts
+    real(dp), dimension(:), allocatable :: surf2volRBF,surf_smoothRBF
+    real(dp), dimension(:,:), allocatable :: Ri
+end type surfFvolinterp
 
 !Local surface data type
 type lsurface
@@ -66,10 +75,11 @@ end type shellcurvetype
 !Surface data type 
 type surface_data
     integer(in) :: nvtx,nfcs,nobj,nedge,nvtxf,maxValence
-    integer(in), dimension(:), allocatable :: vertex_obj,vncell,valence
+    integer(in), dimension(:), allocatable :: vertex_obj,vncell,valence,vtx_vmesh_cell
     integer(in), dimension(:,:), allocatable :: connectivity,connectivityM,fesharp,edges,V2F,F2E,V2E,E2F,vcell
-    real(dp), dimension(:), allocatable :: vtx_rcurv,vtx_maxcurv,face_rcurv,face_maxcurv,vtx_rcurv_full,face_area
-    real(dp), dimension(:,:), allocatable :: vertices,face_ecurv,vertices_full,face_normal
+    real(dp), dimension(:), allocatable :: face_rcurv,face_maxcurv,vtx_rcurv_full,face_area
+    real(dp), dimension(:), allocatable :: vtx_rcurv,vtx_meancurv,vtx_gausscurv,vtx_k1,vtx_k2
+    real(dp), dimension(:,:), allocatable :: vertices,face_ecurv,vertices_full,face_normal,vtx_normal
     type(face_data), dimension(:), allocatable :: tri_clipped
 end type surface_data
 
@@ -90,8 +100,8 @@ end type clipped_face_data
 
 !Octree data type 
 type octree_data
-    integer(in) :: cins,vins,maxvalence,nedge 
-    integer(in), dimension(:), allocatable :: cell_level,cell_vcmid,vtx_valence,cell_parent,cell_keep
+    integer(in) :: cins,vins,maxvalence,nedge,maxDR 
+    integer(in), dimension(:), allocatable :: cell_level,cell_vcmid,vtx_valence,cell_parent,cell_keep,valence
     integer(in), dimension(:,:), allocatable :: V2V,edge_index,cell2edge
     integer(in), dimension(:,:), allocatable :: cell_vcnr,cell_vemid,cell_vfmid,cell_child,cell_adjacent,cell_diagonal
     real(dp), dimension(:,:), allocatable :: vtx
@@ -144,4 +154,13 @@ type vtx_intersect
     integer(in) :: nintersect
     integer(in) :: face_int_idx(8)
 end type vtx_intersect
+
+!Surface mesh edge potential volume mesh intersection list type 
+type smvmintlist
+    integer(in) :: nface,nentry 
+    integer(in), dimension(:), allocatable :: faces,fint_vm_edge,fint_intersect_invalid
+    real(dp), dimension(:,:), allocatable :: fint_int_loc
+    character(len=2), dimension(:), allocatable :: fint_sm_loc,fint_vm_loc
+end type smvmintlist
+
 end module cellmesh3d_data_mod

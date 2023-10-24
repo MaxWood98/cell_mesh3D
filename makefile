@@ -13,6 +13,7 @@ OBJDIR = obj/
 OBJS = $(addprefix $(OBJDIR), \
 		cell_mesh3D_data_module.o\
 		cell_mesh3D_linearalgebra_module.o\
+		cell_mesh3D_connectivity_module.o\
 		cell_mesh3D_io_module.o\
 		cell_mesh3D_AD_tree_module.o\
 		cell_mesh3D_geometry_module.o\
@@ -20,6 +21,7 @@ OBJS = $(addprefix $(OBJDIR), \
 		cell_mesh3D_octree_module.o\
 		cell_mesh3D_mesh_build_module.o\
 		cell_mesh3D_postprocess_module.o\
+		cell_mesh3D_gradient_coupling_module.o\
 		cell_mesh3D_mesh_generation_module.o\
 		)
 

@@ -2,8 +2,8 @@
 !Max Wood - mw16116@bristol.ac.uk
 !Univeristy of Bristol - Department of Aerospace Engineering
 
-!Version 1.0
-!Updated 05-01-2023
+!Version 1.1
+!Updated 19-10-2023
 
 !Main
 program cell_mesh3d
@@ -40,6 +40,9 @@ call cell_mesh3d_mesh(volume_mesh,surface_mesh,cm3dopt,cm3dfailure)
 call export_status(cm3dopt,cm3dfailure)
 call export_volume_mesh(volume_mesh,cm3dopt)
 call export_volume_mesh_flux(volume_mesh,cm3dopt)
+if (cm3dopt%glink_con == 1) then
+    call export_vs2s_interpstruc(volume_mesh,surface_mesh,cm3dopt)
+end if 
 
 !End
 if (cm3dopt%dispt == 1) then

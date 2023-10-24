@@ -8,7 +8,7 @@
 %Function -----------------------------------------------------------------
 function [] = write_input_file_cm3d(cm3dop)
 fid = fopen('io\cell_mesh3d_options.dat','w+');
-    fprintf(fid,'%s \n','#cell_mesh3d options file (version 0.0.1)');
+    fprintf(fid,'%s \n','#cell_mesh3d options file (version 0.1.0)');
     fprintf(fid,'%s \n',' ');
     
     fprintf(fid,'%s \n','#=== General Options =================================');
@@ -73,14 +73,14 @@ fid = fopen('io\cell_mesh3d_options.dat','w+');
     fprintf(fid,'%s \n',' '); 
 
     fprintf(fid,'%s \n','#=== Mesh Geometry Intersection Options ==============');
-    fprintf(fid,'%s \n','#Maximum number of mesh-geometry intersections on each mesh edge');
+    fprintf(fid,'%s \n','#Maximum number of mesh-geometry intersections on each volume mesh edge');
     fprintf(fid,'%d \n',cm3dop.enintmax);
-    fprintf(fid,'%s \n',' ');     
-    fprintf(fid,'%s \n','#Edge-geometry intersection search zone padding as a fraction of the edge length');
-    fprintf(fid,'%E \n',cm3dop.eintpad);
     fprintf(fid,'%s \n',' ');
     fprintf(fid,'%s \n','#Intersection co-incidence tollerance');
     fprintf(fid,'%E \n',cm3dop.int_coin_tol);
+    fprintf(fid,'%s \n',' ');
+    fprintf(fid,'%s \n','#Intersection co-incidence tollerance');
+    fprintf(fid,'%E \n',cm3dop.bary_loc_tol);
     fprintf(fid,'%s \n',' ');
         
     fprintf(fid,'%s \n','#=== Surface Format Options ==========================');
@@ -114,7 +114,7 @@ fid = fopen('io\cell_mesh3d_options.dat','w+');
     fprintf(fid,'%s \n',' ');
 
     fprintf(fid,'%s \n','#=== Gradient Interpolation Options ==================');
-    fprintf(fid,'%s \n','#Construct volume to surface gradient interpolation (1 = yes | 0 = no)');
+    fprintf(fid,'%s \n','#Construct and export volume to surface gradient interpolation (1 = yes | 0 = no)');
     fprintf(fid,'%d \n',cm3dop.glink_con);
     fprintf(fid,'%s \n',' '); 
     fprintf(fid,'%s \n','#Number of nearest neighbours to use for volume to surface gradient interpolation');

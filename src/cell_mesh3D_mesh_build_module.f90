@@ -2,8 +2,8 @@
 !Max Wood - mw16116@bristol.ac.uk
 !Univeristy of Bristol - Department of Aerospace Engineering
 
-!Version 5.0
-!Updated 16-10-2023
+!Version 6.1
+!Updated 24-10-2023
 
 !Module
 module cellmesh3d_mesh_build_mod
@@ -46,50 +46,7 @@ call build_full_mesh(volume_mesh_full,ot_mesh,cm3dopt)
 call build_vmesh_edges(volume_mesh_full%nedge,volume_mesh_full%edges,volume_mesh_full,6_in)
 
 !Intersect the full volume mesh with the surface geometry to construct the final volume mesh 
-call clip_vmesh2surface(volume_mesh,volume_mesh_full,surface_adtree,surface_mesh,ot_mesh,cm3dopt,type_tgt,cm3dfailure)
-
-!Debug ==============================================
-! !Debug export full mesh ---
-! open(11,file=cm3dopt%iopath//'mesh_test_vtx')
-!     do ii=1,volume_mesh_full%nvtx
-!         write(11,*) volume_mesh_full%vtx(ii,:)
-!     end do 
-! close(11)
-! open(11,file=cm3dopt%iopath//'mesh_test_faces')
-!     write(11,*) maxval(volume_mesh_full%faces(:)%nvtx)
-!     do ii=1,volume_mesh_full%nface
-!         write(11,*) volume_mesh_full%faces(ii)%nvtx, volume_mesh_full%faces(ii)%vertices(:)
-!     end do 
-! close(11)
-
-! open(11,file=cm3dopt%iopath//'cell_lr')
-!     do ii=1,volume_mesh_full%nface
-!         write(11,*) volume_mesh_full%faces(ii)%cleft,volume_mesh_full%faces(ii)%cright
-!     end do 
-! close(11)
-
-! !Debug export final mesh ---
-! open(11,file=cm3dopt%iopath//'mesh_test_vtx')
-!     do ii=1,volume_mesh%nvtx
-!         write(11,*) volume_mesh%vtx(ii,:)
-!     end do 
-! close(11)
-! open(11,file=cm3dopt%iopath//'mesh_test_faces')
-!     write(11,*) maxval(volume_mesh%faces(:)%nvtx)
-!     do ii=1,volume_mesh%nface
-!         write(11,*) volume_mesh%faces(ii)%nvtx, volume_mesh%faces(ii)%vertices(:)
-!     end do 
-! close(11)
-! open(11,file=cm3dopt%iopath//'cell_lr')
-!     do ii=1,volume_mesh%nface
-!         write(11,*) volume_mesh%faces(ii)%cleft,volume_mesh%faces(ii)%cright
-!     end do 
-! close(11)
-! open(11,file=cm3dopt%iopath//'mesh_FT_vtx')
-!     do ii=1,volume_mesh%nvtx
-!         write(11,*) volume_mesh%vtx(ii,:)
-!     end do 
-! close(11)
+call clip_vmesh2surface(volume_mesh,volume_mesh_full,surface_adtree,surface_mesh,cm3dopt,type_tgt,cm3dfailure)
 return 
 end subroutine construct_mesh
 
@@ -97,13 +54,12 @@ end subroutine construct_mesh
 
 
 !Clip volume mesh to geometry subroutine ===========================
-subroutine clip_vmesh2surface(volume_mesh,volume_mesh_full,surface_adtree,surface_mesh,ot_mesh,cm3dopt,type_tgt,cm3dfailure)
+subroutine clip_vmesh2surface(volume_mesh,volume_mesh_full,surface_adtree,surface_mesh,cm3dopt,type_tgt,cm3dfailure)
 implicit none 
 
 !Variables - Import
 integer(in) :: type_tgt,cm3dfailure
 type(cm3d_options) :: cm3dopt
-type(octree_data) :: ot_mesh
 type(surface_data) :: surface_mesh
 type(vol_mesh_data) :: volume_mesh_full,volume_mesh
 type(tree_data) :: surface_adtree
@@ -128,6 +84,25 @@ do ee=1,volume_mesh_full%nedge
     ev2 = volume_mesh_full%edges(ee,2)
     volume_mesh_full%valence(ev1) = volume_mesh_full%valence(ev1) + 1
     volume_mesh_full%valence(ev2) = volume_mesh_full%valence(ev2) + 1
+    if ((volume_mesh_full%valence(ev1) .GT. 6) .OR. (volume_mesh_full%valence(ev2) .GT. 6)) then 
+        print *, '** octree valence 6 exceeded on edge : ',ev1,ev2
+        if (volume_mesh_full%valence(ev1) .GT. 6) then 
+            print *, '** vertex excessive valence : ',ev1
+            do ii=1,6
+                etgt = volume_mesh_full%V2E(ev1,ii)
+                print *, volume_mesh_full%edges(etgt,1),volume_mesh_full%edges(etgt,2)
+            end do 
+        end if 
+        if (volume_mesh_full%valence(ev2) .GT. 6) then 
+            print *, '** vertex excessive valence : ',ev2
+            do ii=1,6
+                etgt = volume_mesh_full%V2E(ev2,ii)
+                print *, volume_mesh_full%edges(etgt,1),volume_mesh_full%edges(etgt,2)
+            end do 
+        end if 
+        cm3dfailure = 1
+        return 
+    end if 
     volume_mesh_full%V2E(ev1,volume_mesh_full%valence(ev1)) = ee
     volume_mesh_full%V2E(ev2,volume_mesh_full%valence(ev2)) = ee 
 end do 
@@ -147,6 +122,14 @@ do ff=1,volume_mesh_full%nface
     end do 
 end do 
 
+!Initialise clipped volume structure 
+allocate(edge_clip_vm(volume_mesh_full%nedge))
+do ee=1,volume_mesh_full%nedge
+    edge_clip_vm(ee)%nitem = 0 
+    edge_clip_vm(ee)%nint = 0 
+    edge_clip_vm(ee)%type = 0 
+end do 
+
 !Initialise clipped surface structure 
 cm3dopt%max_int_size = cm3dopt%NintEmax 
 allocate(vtx_clip_sm(surface_mesh%nvtx))
@@ -163,9 +146,12 @@ do ee=1,surface_mesh%nedge
     allocate(edge_clip_sm(ee)%vtx_idx(cm3dopt%NintEmax))
     allocate(edge_clip_sm(ee)%vmface(cm3dopt%NintEmax,8))
     allocate(edge_clip_sm(ee)%nfint(cm3dopt%NintEmax))
+    allocate(edge_clip_sm(ee)%int_tri_loc(cm3dopt%NintEmax))
+    allocate(edge_clip_sm(ee)%surfseg(cm3dopt%NintEmax))
     edge_clip_sm(ee)%vtx_idx(:) = 0 
     edge_clip_sm(ee)%vmface(:,:) = 0 
     edge_clip_sm(ee)%nfint(:) = 0 
+    edge_clip_sm(ee)%surfseg(:) = 0 
 end do 
 allocate(tri_clip_sm(surface_mesh%nfcs))
 do ff=1,surface_mesh%nfcs
@@ -190,61 +176,65 @@ vtx_idx_smesh = surface_mesh%nvtx
 
 !Display
 if (cm3dopt%dispt == 1) then
-    write(*,'(A)') '--> perturbing surface co-incident vertices '
+    write(*,'(A)') '--> perturbing surface and mesh co-incident vertices '
 end if
 
-!Perturb vertices within tollerance of surfaces 
-call perturb_onsurf_vertices(volume_mesh_full,surface_adtree,surface_mesh,cm3dopt)
+!Perturb volume mesh vertices within tollerance of surfaces 
+call perturb_onsurf_vmesh_vertices(volume_mesh_full,surface_adtree,surface_mesh,cm3dopt)
 
-!Display 
-if (cm3dopt%dispt == 1) then
-    write(*,'(A)') '--> intersecting volume mesh with surface geometry '
-end if
-
-!Intersect volume mesh edges with the surface mesh 
-call clip_voledges2surffaces(edge_clip_vm,volume_mesh_full,surface_adtree,surface_mesh,cm3dopt,vtx_idx_smesh,cm3dfailure)
-
-!Display 
-if (cm3dopt%dispt == 1) then
-    write(*,'(A)') '--> evaluating edge and vertex containment '
-end if
-        
-!Construct vtx_external and classify edge types 
-call classify_edge_vertex_geom_containment(vtx_external,edge_clip_vm,volume_mesh_full,cm3dopt,cm3dfailure)
+!Perturb surface mesh vertices within tollerance of volume mesh faces 
+call perturb_onmesh_smesh_vertices(volume_mesh_full,surface_adtree,surface_mesh,cm3dopt)
 
 !Display
 if (cm3dopt%dispt == 1) then
     write(*,'(A)') '--> intersecting surface mesh with the base volume mesh '
 end if
 
-!Push all volume mesh intersections to the surface mesh structure 
+!Intersect the surface mesh edges with the volume mesh faces
 if (cm3dopt%dispt == 1) then
-    write(*,'(A)') '    {pushing volume mesh edge intersections to the surface intersection structures}'
+    write(*,'(A)') '    {intersecting surface edges with the volume mesh}'
 end if
-call push_vm_intersections_2_sm(edge_clip_sm,edge_clip_vm,tri_clip_sm,vtx_clip_sm,volume_mesh_full,surface_mesh,cm3dopt)
+call clip_surfedges2volfaces(edge_clip_sm,vtx_clip_sm,edge_clip_vm,volume_mesh_full,surface_mesh,surface_adtree,&
+                             cm3dopt,vtx_idx_smesh)
 
-!Clip surface mesh edges to volume mesh faces 
+!Intersect volume mesh edges with the surface mesh faces
 if (cm3dopt%dispt == 1) then
-    write(*,'(A)') '    {clipping surface mesh edges against the base volume mesh}'
-end if
-call clip_surfedges2volfaces(edge_clip_sm,volume_mesh_full,surface_mesh,surface_adtree,cm3dopt,vtx_idx_smesh,vtx_clip_sm)
+    write(*,'(A)') '    {intersecting volume edges with the surface mesh}'
+end if                             
+call clip_voledges2surffaces(edge_clip_vm,edge_clip_sm,vtx_clip_sm,tri_clip_sm,volume_mesh_full,surface_adtree,surface_mesh,&
+                             cm3dopt,vtx_idx_smesh)
 
-!Construct edge mesh on any intersected volume mesh edges 
-call build_vol_intersect_edge_mesh(edge_clip_vm,volume_mesh_full)
-
-!Construct edge mesh on any intersected surface mesh edges 
+!Construct edge meshes 
+if (cm3dopt%dispt == 1) then
+    write(*,'(A)') '    {constructing intersecting edge internal meshes}'
+end if    
+call build_vol_intersect_edge_mesh(edge_clip_vm,volume_mesh_full,cm3dopt)
 call build_surf_intersect_edge_mesh(edge_clip_sm,surface_mesh,cm3dopt)
 
+!Construct vtx_external and classify edge types 
+if (cm3dopt%dispt == 1) then
+    write(*,'(A)') '--> evaluating edge and vertex containment '
+end if
+call classify_edge_vertex_geom_containment(vtx_external,edge_clip_vm,volume_mesh_full,surface_mesh,cm3dopt,cm3dfailure)
 
-!DEBUG ====================================================================
-! print *, 'maxints / edge =='
-! print *, maxval(edge_clip_vm(:)%nint),' / ',maxloc(edge_clip_vm(:)%nint)
-! print *, maxval(edge_clip_sm(:)%nint),' / ',maxloc(edge_clip_sm(:)%nint)
-! print *, 'emaxv1 = ', surface_mesh%vertices(surface_mesh%edges(maxloc(edge_clip_sm(:)%nint),1),:)
-! print *, 'emaxv2 = ', surface_mesh%vertices(surface_mesh%edges(maxloc(edge_clip_sm(:)%nint),2),:)
+!Assign the volume mesh cells of each surface mesh vertex
+if (cm3dopt%dispt == 1) then
+    write(*,'(A)') '    {assigning surface mesh vertex containing volume mesh cells}'
+end if
+call assign_smvtx_vmcells(edge_clip_sm,vtx_clip_sm,surface_mesh,volume_mesh_full)
 
+!Display maximum number of intersections 
+if (cm3dopt%dispt == 1) then
+    write(*,'(A,I0,A)') '    {maximum intersections on a volume edge = ',maxval(edge_clip_vm(:)%nint),'}'
+    write(*,'(A,I0,A)') '    {maximum intersections on a surface vertex = ',maxval(vtx_clip_sm(:)%nintersect),'}'
+    write(*,'(A,I0,A)') '    {maximum intersections on a surface edge = ',maxval(edge_clip_sm(:)%nint),'}'
+    write(*,'(A,I0,A)') '    {maximum intersections on a surface triangle = ',maxval(tri_clip_sm(:)%nvtx),'}'
+end if
 
-! !Debug export full mesh =======================
+!Set maximum intersection count on a surface triangle 
+cm3dopt%stnintmax = 3*(maxval(vtx_clip_sm(:)%nintersect) + maxval(edge_clip_sm(:)%nint)) + maxval(tri_clip_sm(:)%nvtx)
+
+!Debug export full mesh =======================
 ! open(11,file=cm3dopt%iopath//'mesh_test_vtx')
 !     do ii=1,volume_mesh_full%nvtx
 !         write(11,*) volume_mesh_full%vtx(ii,:)
@@ -261,10 +251,33 @@ call build_surf_intersect_edge_mesh(edge_clip_sm,surface_mesh,cm3dopt)
 !         write(11,*) volume_mesh_full%faces(ii)%cleft,volume_mesh_full%faces(ii)%cright
 !     end do 
 ! close(11)
-! !Debug export full mesh =======================
+!Debug export full mesh =======================
 
+!Debug export external vertices =======================
+! open(11,file='io/vtxexternal.dat')
+! do ee=1,volume_mesh_full%nvtx
+!     if (vtx_external(ee) == 1) then 
+!         write(11,*) volume_mesh_full%vtx(ee,:)
+!     end if
+! end do 
+! close(11)
+!Debug export external vertices =======================
 
-! !Debug write intersections =======================
+!Debug export intersecting vm edges =======================
+! open(11,file='io/vmeint.dat')
+! do ee=1,volume_mesh_full%nedge
+!     if ((edge_clip_vm(ee)%nint .GT. 0) .AND. (edge_clip_vm(ee)%type .NE. 4)) then 
+!         print *, 'ret'
+!     end if 
+
+!     if (edge_clip_vm(ee)%type == 4) then 
+!         write(11,*) volume_mesh_full%vtx(volume_mesh_full%edges(ee,1),:),volume_mesh_full%vtx(volume_mesh_full%edges(ee,2),:)
+!     end if
+! end do 
+! close(11)
+!Debug export intersecting vm edges =======================
+
+!Debug write intersections =======================
 ! open(11,file='io/vmsint_edge.dat') 
 ! do ee=1,surface_mesh%nedge
 !     if (edge_clip_sm(ee)%nint .GT. 0) then 
@@ -290,9 +303,7 @@ call build_surf_intersect_edge_mesh(edge_clip_sm,surface_mesh,cm3dopt)
 !     end if 
 ! end do 
 ! close(11)
-! !Debug write intersections =======================
-!DEBUG ====================================================================
-
+!Debug write intersections =======================
 
 !Build complete list of surface vertices including all clipping intersections 
 surface_mesh%nvtxf = vtx_idx_smesh
@@ -340,20 +351,16 @@ do ff=1,surface_mesh%nfcs
     end if 
 end do 
 
-!Display
+!Build surface triangle internal edges
 if (cm3dopt%dispt == 1) then
     write(*,'(A)') '--> constructing volume mesh clipped surface mesh edges '
 end if
-
-!Build surface triangle internal edges
 call build_surftri_internal_edges(tri_clip_sm,edge_clip_sm,vtx_clip_sm,surface_mesh,volume_mesh_full,cm3dopt)
 
-!Display
+!Build surface mesh clippled volume mesh faces 
 if (cm3dopt%dispt == 1) then
     write(*,'(A)') '--> constructing surface mesh clipped volume mesh faces '
 end if
-
-!Build surface mesh clippled volume mesh faces 
 call build_surface_clipped_vmesh_faces(volume_mesh_full,surface_mesh,surface_adtree,cm3dopt,tri_clip_sm,vtx_clip_sm,&
                                        edge_clip_sm,edge_clip_vm,vtx_idx_smesh,type_tgt,surface_mesh%vertices_full)
 
@@ -363,7 +370,7 @@ if (cm3dopt%dispt == 1) then
 end if 
 
 !Build volume mesh clipped surface triangles 
-call build_volume_clipped_smesh_faces(surface_mesh,tri_clip_sm,edge_clip_sm,vtx_clip_sm,volume_mesh_full,ot_mesh,cm3dopt)
+call build_volume_clipped_smesh_faces(surface_mesh,tri_clip_sm,edge_clip_sm,vtx_clip_sm,volume_mesh_full,cm3dopt)
 
 !Display
 if (cm3dopt%dispt == 1) then
@@ -375,7 +382,6 @@ call build_final_vmesh(volume_mesh,volume_mesh_full,surface_mesh,type_tgt)
 
 !Set cell associations of all unclipped surface mesh faces
 call set_surface_mesh_cells(volume_mesh)
-
 return 
 end subroutine clip_vmesh2surface
 
@@ -647,8 +653,8 @@ do ff=1,volume_mesh_full%nface !volume mesh
         end do
 
         !Set adjacency
-        volume_mesh%faces(face_idx)%cleft = volume_mesh_full%faces(ff)%cleft
-        volume_mesh%faces(face_idx)%cright = volume_mesh_full%faces(ff)%cright
+        volume_mesh%faces(face_idx)%cleft = volume_mesh_full%faces(ff)%cright
+        volume_mesh%faces(face_idx)%cright = volume_mesh_full%faces(ff)%cleft
 
         !Store final index of this face
         volume_mesh_full%faces(ff)%face_clipped(aa)%fidx_final = face_idx
@@ -699,10 +705,6 @@ do ff=1,surface_mesh%nfcs !surface mesh
             volume_mesh%faces(face_idx)%cleft = surface_mesh%tri_clipped(ff)%face_clipped(aa)%cright
             volume_mesh%faces(face_idx)%cright = -1
         end if 
-        !print *, volume_mesh%faces(face_idx)%cright
-        ! if (face_idx == 33978) then 
-        !     print *, 'SMface = ',ff
-        ! end if 
     end do 
 end do 
 
@@ -719,7 +721,7 @@ end subroutine build_final_vmesh
 
 
 !Build surface mesh volume clipped faces ===========================
-subroutine build_volume_clipped_smesh_faces(surface_mesh,tri_clip_sm,edge_clip_sm,vtx_clip_sm,volume_mesh_full,ot_mesh,cm3dopt)
+subroutine build_volume_clipped_smesh_faces(surface_mesh,tri_clip_sm,edge_clip_sm,vtx_clip_sm,volume_mesh_full,cm3dopt)
 implicit none 
 
 !Variables - Import
@@ -729,18 +731,16 @@ type(triint), dimension(:) :: tri_clip_sm
 type(edgeint), dimension(:) :: edge_clip_sm
 type(vtx_intersect), dimension(:) :: vtx_clip_sm
 type(cm3d_options) :: cm3dopt
-type(octree_data) :: ot_mesh
 
 !Variables - Local 
 integer(in) :: ff,vv,ee,aa,ii,cc,ss 
 integer(in) :: vintvalid1,vintvalid2,ebase,vbase,enew,vnew,all_te_subedge,diff_parent,nint_tri
-integer(in) :: nc_ontri,cl,cr,ftgt,ctgt,etgt,vtgt,nedge_tface,ve1,ve2,coctree,v1,v2,face_nvtx,vc,vn,v0
+integer(in) :: nc_ontri,cl,cr,ftgt,ctgt,etgt,vtgt,nedge_tface,v1,v2,face_nvtx,vc,vn,v0
 integer(in) :: cell_on_tri(cm3dopt%max_int_size),edge_face_idx(2*cm3dopt%max_int_size),edges_on_tri(2*cm3dopt%max_int_size,4)
-integer(in) :: cell_selected(volume_mesh_full%ncell),tedge_cell(3),tvtx_cell(3),eend_cell(3,2)
+integer(in) :: cell_selected(volume_mesh_full%ncell),tedge_cell(3),eend_cell(3,2)
 integer(in) :: vtx_face_pos(surface_mesh%nvtxf),fliparray(cm3dopt%max_int_size)
 integer(in) :: v2e_flocal(surface_mesh%nvtxf,2)
-real(dp) :: zxmin,zxmax,zymin,zymax,zzmin,zzmax
-real(dp) :: emid(3),vtxref(3),Nft(3),Nf(3),vtxC(3),vtxN(3),fmid(3)
+real(dp) :: Nft(3),Nf(3),vtxC(3),vtxN(3),fmid(3)
 
 !Build sub clipped faces for each surface mesh face 
 nedge_tface = 0
@@ -763,6 +763,8 @@ do ff=1,surface_mesh%nfcs
     do ee=1,3
         etgt = surface_mesh%F2E(ff,ee)
         nint_tri = nint_tri + edge_clip_sm(etgt)%nint
+        vtgt = surface_mesh%connectivity(ff,ee)
+        nint_tri = nint_tri + vtx_clip_sm(vtgt)%nintersect
     end do 
 
     !Build sub-faces if this face has been clipped
@@ -848,83 +850,40 @@ do ff=1,surface_mesh%nfcs
         end do 
         cell_selected(cell_on_tri(1:nc_ontri)) = 0 
 
-        !Assign a cell from cell_on_tri to any edge of this triangle that has no face intersections 
+        !Assign a cell containement for and edge of this triangle that has no face intersections 
         tedge_cell(:) = 0 
         do ee=1,3
             etgt = surface_mesh%F2E(ff,ee)
             if (edge_clip_sm(etgt)%nint == 0) then !Pick cell that contains the edge midpoint 
 
-                !Find edge midpoint 
-                ve1 = surface_mesh%edges(etgt,1)
-                ve2 = surface_mesh%edges(etgt,2)
-                emid(1) = 0.5d0*(surface_mesh%vertices(ve1,1) + surface_mesh%vertices(ve2,1))
-                emid(2) = 0.5d0*(surface_mesh%vertices(ve1,2) + surface_mesh%vertices(ve2,2))
-                emid(3) = 0.5d0*(surface_mesh%vertices(ve1,3) + surface_mesh%vertices(ve2,3))
+                !Edge ends 
+                v1 = surface_mesh%edges(etgt,1)
+                v2 = surface_mesh%edges(etgt,2)
 
-                !Test containement against each cell selected for this triangle 
-                do cc=1,nc_ontri
-                    ctgt = cell_on_tri(cc)
-                    coctree = volume_mesh_full%cell_otidx(ctgt)
-                    zxmin = ot_mesh%vtx(ot_mesh%cell_vcnr(coctree,1),1)
-                    zxmax = ot_mesh%vtx(ot_mesh%cell_vcnr(coctree,7),1)
-                    zymin = ot_mesh%vtx(ot_mesh%cell_vcnr(coctree,1),2)
-                    zymax = ot_mesh%vtx(ot_mesh%cell_vcnr(coctree,7),2)
-                    zzmin = ot_mesh%vtx(ot_mesh%cell_vcnr(coctree,1),3)
-                    zzmax = ot_mesh%vtx(ot_mesh%cell_vcnr(coctree,7),3)
-                    if ((emid(1) .GE. zxmin) .AND. (emid(1) .LE. zxmax)) then 
-                        if ((emid(2) .GE. zymin) .AND. (emid(2) .LE. zymax)) then 
-                            if ((emid(3) .GE. zzmin) .AND. (emid(3) .LE. zzmax)) then 
-                                tedge_cell(ee) = ctgt 
-                                exit 
-                            end if 
-                        end if 
-                    end if 
-                end do 
-            end if
-        end do 
-
-        !Assign a cell from cell_on_tri to any vertex on this triangle that has no intersections 
-        tvtx_cell(:) = 0 
-        do vv=1,3
-            vtxref(:) = surface_mesh%vertices(surface_mesh%connectivity(ff,vv),:)
-            do cc=1,nc_ontri
-                ctgt = cell_on_tri(cc)
-                coctree = volume_mesh_full%cell_otidx(ctgt)
-                zxmin = ot_mesh%vtx(ot_mesh%cell_vcnr(coctree,1),1)
-                zxmax = ot_mesh%vtx(ot_mesh%cell_vcnr(coctree,7),1)
-                zymin = ot_mesh%vtx(ot_mesh%cell_vcnr(coctree,1),2)
-                zymax = ot_mesh%vtx(ot_mesh%cell_vcnr(coctree,7),2)
-                zzmin = ot_mesh%vtx(ot_mesh%cell_vcnr(coctree,1),3)
-                zzmax = ot_mesh%vtx(ot_mesh%cell_vcnr(coctree,7),3)
-                if ((vtxref(1) .GE. zxmin) .AND. (vtxref(1) .LE. zxmax)) then 
-                    if ((vtxref(2) .GE. zymin) .AND. (vtxref(2) .LE. zymax)) then 
-                        if ((vtxref(3) .GE. zzmin) .AND. (vtxref(3) .LE. zzmax)) then 
-                            tvtx_cell(vv) = ctgt 
-                            exit 
-                        end if 
+                !If they are both within the same cell by vertex assignment take that cell for this edge 
+                if (surface_mesh%vtx_vmesh_cell(v1) == surface_mesh%vtx_vmesh_cell(v2)) then !both clearly within the cell 
+                    tedge_cell(ee) = surface_mesh%vtx_vmesh_cell(v1)
+                else !one or both ends lies on the cell boundary 
+                    if (surface_mesh%vtx_vmesh_cell(v1) .NE. 0) then     
+                        tedge_cell(ee) = surface_mesh%vtx_vmesh_cell(v1)
+                    elseif (surface_mesh%vtx_vmesh_cell(v2) .NE. 0) then     
+                        tedge_cell(ee) = surface_mesh%vtx_vmesh_cell(v2)
+                    else
+                        print *, '** ambiguous cell internal surface mesh edge assignment at surface face : ',ff
+                        print *, surface_mesh%vtx_vmesh_cell(v1),surface_mesh%vtx_vmesh_cell(v2)
                     end if 
                 end if 
-            end do 
+            end if 
         end do 
 
-        !Assign edge end cell containements 
+        !Assign triangle edge end cell containements 
         eend_cell(:,:) = 0 
         do ee=1,3 !Triangle edges 
             etgt = surface_mesh%F2E(ff,ee)
             v1 = surface_mesh%edges(etgt,1)
-            do vv=1,3
-                if (v1 == surface_mesh%connectivity(ff,vv)) then 
-                    eend_cell(ee,1) = tvtx_cell(vv)
-                    exit 
-                end if 
-            end do 
             v2 = surface_mesh%edges(etgt,2)
-            do vv=1,3
-                if (v2 == surface_mesh%connectivity(ff,vv)) then 
-                    eend_cell(ee,2) = tvtx_cell(vv)
-                    exit 
-                end if 
-            end do 
+            eend_cell(ee,1) = surface_mesh%vtx_vmesh_cell(v1)
+            eend_cell(ee,2) = surface_mesh%vtx_vmesh_cell(v2)
         end do 
 
         !Allocate clipped face array to its maximum size
@@ -998,12 +957,10 @@ do ff=1,surface_mesh%nfcs
                         end if
                     end if 
                 else !Take edge segments where both ends of the segment are associated with the cell ctgt 
-                   
                     do ss=1,edge_clip_sm(etgt)%nint+1
                         v1 = edge_clip_sm(etgt)%edge_mesh(ss,1)
                         v2 = edge_clip_sm(etgt)%edge_mesh(ss,2)
                         if (ss == 1) then !end 1 to first intersect
-
                             vintvalid1 = 0 
                             do vv=1,vtx_clip_sm(v1)%nintersect
                                 ftgt = vtx_clip_sm(v1)%face_int_idx(vv)
@@ -1021,7 +978,6 @@ do ff=1,surface_mesh%nfcs
                             if (eend_cell(ee,1) == ctgt) then 
                                 vintvalid1 = 1
                             end if 
-
                             vintvalid2 = 0 
                             do aa=1,edge_clip_sm(etgt)%nfint(abs(v2))
                                 ftgt = edge_clip_sm(etgt)%vmface(abs(v2),aa)
@@ -1036,7 +992,6 @@ do ff=1,surface_mesh%nfcs
                                     exit
                                 end if 
                             end do 
-
                             if ((vintvalid1 == 1) .AND. (vintvalid2 == 1)) then !both ends of this segment intersect the face
                                 nedge_tface = nedge_tface + 1
                                 edges_on_tri(nedge_tface,1) = v1
@@ -1046,7 +1001,6 @@ do ff=1,surface_mesh%nfcs
                                 ! print *, 'v1 - int'
                             end if
                         elseif (ss == edge_clip_sm(etgt)%nint+1) then !last intersect to end 2
-
                             vintvalid1 = 0 
                             do aa=1,edge_clip_sm(etgt)%nfint(abs(v1))
                                 ftgt = edge_clip_sm(etgt)%vmface(abs(v1),aa)
@@ -1061,7 +1015,6 @@ do ff=1,surface_mesh%nfcs
                                     exit
                                 end if 
                             end do 
-
                             vintvalid2 = 0 
                             do vv=1,vtx_clip_sm(v2)%nintersect
                                 ftgt = vtx_clip_sm(v2)%face_int_idx(vv)
@@ -1079,7 +1032,6 @@ do ff=1,surface_mesh%nfcs
                             if (eend_cell(ee,2) == ctgt) then 
                                 vintvalid2 = 1
                             end if
-
                             if ((vintvalid1 == 1) .AND. (vintvalid2 == 1)) then !both ends of this segment intersect the face
                                 nedge_tface = nedge_tface + 1
                                 edges_on_tri(nedge_tface,1) = edge_clip_sm(etgt)%vtx_idx(abs(v1))
@@ -1089,7 +1041,6 @@ do ff=1,surface_mesh%nfcs
                                 ! print *, 'int - v2'
                             end if
                         else !mid intersects 
-
                             vintvalid1 = 0 
                             do aa=1,edge_clip_sm(etgt)%nfint(abs(v1))
                                 ftgt = edge_clip_sm(etgt)%vmface(abs(v1),aa)
@@ -1104,7 +1055,6 @@ do ff=1,surface_mesh%nfcs
                                     exit
                                 end if 
                             end do 
-
                             vintvalid2 = 0 
                             do aa=1,edge_clip_sm(etgt)%nfint(abs(v2))
                                 ftgt = edge_clip_sm(etgt)%vmface(abs(v2),aa)
@@ -1119,7 +1069,6 @@ do ff=1,surface_mesh%nfcs
                                     exit
                                 end if 
                             end do 
-
                             if ((vintvalid1 == 1) .AND. (vintvalid2 == 1)) then !both ends of this segment intersect the face
                                 nedge_tface = nedge_tface + 1
                                 edges_on_tri(nedge_tface,1) = edge_clip_sm(etgt)%vtx_idx(abs(v1))
@@ -1130,7 +1079,6 @@ do ff=1,surface_mesh%nfcs
                             end if
                         end if
                     end do 
-
                 end if 
             end do 
 
@@ -1194,6 +1142,9 @@ do ff=1,surface_mesh%nfcs
                                     surface_mesh%vertices_full(edges_on_tri(ee,2),:)
                     end do 
                     close(11)
+                    if (ff == 709) then 
+                        stop 
+                    end if 
                     cycle
                 end if
 
@@ -1209,7 +1160,7 @@ do ff=1,surface_mesh%nfcs
                 
                 !Accumulate vertices to this triangle sub-face
                 edge_face_idx(1:nedge_tface) = 0  
-                do ee=1,nedge_tface
+                do ee=1,nedge_tface*2
 
                     !Find next edge
                     enew = 0 
@@ -1361,14 +1312,14 @@ type(cm3d_options) :: cm3dopt
 
 !Variables - Local
 integer(in) :: ff,nn,kk,ii,ee,vv,ss,v1,v2,aa
-integer(in) :: nselected,ttgt,ftgt,nteselect,vs1,vs2,ve1,ve2,nedge_face,etgt,etype,nface_clip,e0,is_clipped
-integer(in) :: ebase,vbase,enew,vnew,vtgt,vc,vn,edg_dup,nfaceb,vintvalid1,vintvalid2,vtx_in_base_face,fsubparent
+integer(in) :: nselected,ttgt,ftgt,nteselect,vs1,vs2,ve1,ve2,nedge_face,etgt,etype,nface_clip,e0,is_clipped,vlnceflag
+integer(in) :: ebase,vbase,v0face,enew,vnew,vtgt,vc,vn,edg_dup,nfaceb,vintvalid1,vintvalid2,vtx_in_base_face,fsubparent
 integer(in) :: node_select(surface_adtree%nnode),edge_face_idx(surface_mesh%nfcs)
-integer(in) :: face_nvtx(cm3dopt%max_int_size),fliparray(volume_mesh_full%nface),vmface_is_intersected(volume_mesh_full%nface)
+integer(in) :: face_nvtx(cm3dopt%max_int_size),vmface_is_intersected(volume_mesh_full%nface)
 integer(in) :: te_select(surface_mesh%nfcs,2),face_ledge(surface_mesh%nfcs,3)
-integer(in) :: v2e_flocal(-vtx_idx_smesh:volume_mesh_full%nvtx,2)
-integer(in) :: vtx_face_idx(-vtx_idx_smesh:volume_mesh_full%nvtx)
-integer(in) :: vtx_face_pos(-vtx_idx_smesh:volume_mesh_full%nvtx)
+integer(in) :: v2e_flocal(-vtx_idx_smesh:volume_mesh_full%nvtx,4),valence_flocal(-vtx_idx_smesh:volume_mesh_full%nvtx)
+integer(in) :: vtx_face_idx(-vtx_idx_smesh:volume_mesh_full%nvtx,4)
+integer(in) :: vtx_face_pos(-vtx_idx_smesh:volume_mesh_full%nvtx,4)
 real(dp) :: cpadSZ,zxmin,zxmax,zymin,zymax,zzmin,zzmax
 real(dp) :: Nf(3),Nft(3),vtxC(3),vtxN(3)
 
@@ -1409,14 +1360,14 @@ nselected = 0
 nteselect = 0 
 nedge_face = 0
 face_nvtx(:) = 0  
-fliparray(:) = 0 
 node_select(:) = 0 
-vtx_face_idx(:) = 0 
-vtx_face_pos(:) = 0
+vtx_face_idx(:,:) = 0 
+vtx_face_pos(:,:) = 0
 edge_face_idx(:) = 0 
 te_select(:,:) = 0 
 face_ledge(:,:) = 0 
 v2e_flocal(:,:) = 0 
+valence_flocal(:) = 0 
 do ff=1,volume_mesh_full%nface
 
     !If this face has any edge intersections with the surface mesh then clip 
@@ -1432,7 +1383,9 @@ do ff=1,volume_mesh_full%nface
     !If this face has no intersections on its edges but surface mesh faces intersect this face then set as internally clipped 
     !(this must construct the face(s) formed by the clipped patch with the opposite orientation to the parent face to subtract from it)
     if ((is_clipped == 0) .AND. (vmface_is_intersected(ff) == 1)) then 
-        print *, 'vmface internally clipped : ',ff
+        if (cm3dopt%dispt == 1) then
+            write(*,'(A,I0,A)') '    {face internally clipped : ',ff,'}'
+        end if
         is_clipped = 2
     end if 
 
@@ -1443,7 +1396,7 @@ do ff=1,volume_mesh_full%nface
         Nf = newell_normal(volume_mesh_full%faces(ff)%nvtx,volume_mesh_full%faces(ff)%vertices,volume_mesh_full%vtx)
 
         !Padding size 
-        cpadSZ = norm2(Nf)*0.05d0
+        cpadSZ = norm2(Nf)*0.005d0
 
         !Intersection bounding box
         zxmin = minval(volume_mesh_full%vtx(volume_mesh_full%faces(ff)%vertices(:),1)) - cpadSZ !tgt bounding box -> xmin
@@ -1487,7 +1440,6 @@ do ff=1,volume_mesh_full%nface
                                 v1 = edge_clip_sm(etgt)%edge_mesh(ss,1)
                                 v2 = edge_clip_sm(etgt)%edge_mesh(ss,2)
                                 if (ss == 1) then !end 1 to first intersect
-
                                     vintvalid1 = 0 
                                     do vv=1,vtx_clip_sm(v1)%nintersect
                                         if (vtx_clip_sm(v1)%face_int_idx(vv) == ff) then 
@@ -1495,7 +1447,6 @@ do ff=1,volume_mesh_full%nface
                                             exit 
                                         end if
                                     end do 
-
                                     vintvalid2 = 0 
                                     do aa=1,edge_clip_sm(etgt)%nfint(abs(v2))
                                         if (edge_clip_sm(etgt)%vmface(abs(v2),aa) == ff) then 
@@ -1503,16 +1454,13 @@ do ff=1,volume_mesh_full%nface
                                             exit 
                                         end if 
                                     end do 
-
                                     if ((vintvalid1 == 1) .AND. (vintvalid2 == 1)) then !both ends of this segment intersect the face
                                         nteselect = nteselect + 1
                                         te_select(nteselect,1) = v1
                                         te_select(nteselect,2) = edge_clip_sm(etgt)%vtx_idx(abs(v2))
                                         ! print *, 'v1 - int'
                                     end if
-
                                 elseif (ss == edge_clip_sm(etgt)%nint+1) then !last intersect to end 2
-
                                     vintvalid1 = 0 
                                     do aa=1,edge_clip_sm(etgt)%nfint(abs(v1))
                                         if (edge_clip_sm(etgt)%vmface(abs(v1),aa) == ff) then 
@@ -1520,7 +1468,6 @@ do ff=1,volume_mesh_full%nface
                                             exit 
                                         end if 
                                     end do 
-
                                     vintvalid2 = 0 
                                     do vv=1,vtx_clip_sm(v2)%nintersect
                                         if (vtx_clip_sm(v2)%face_int_idx(vv) == ff) then 
@@ -1528,16 +1475,13 @@ do ff=1,volume_mesh_full%nface
                                             exit 
                                         end if
                                     end do 
-
                                     if ((vintvalid1 == 1) .AND. (vintvalid2 == 1)) then !both ends of this segment intersect the face
                                         nteselect = nteselect + 1
                                         te_select(nteselect,1) = edge_clip_sm(etgt)%vtx_idx(abs(v1))
                                         te_select(nteselect,2) = v2
                                         ! print *, 'int - v2'
                                     end if
-
                                 else !mid intersects 
-
                                     vintvalid1 = 0 
                                     do aa=1,edge_clip_sm(etgt)%nfint(abs(v1))
                                         if (edge_clip_sm(etgt)%vmface(abs(v1),aa) == ff) then 
@@ -1545,7 +1489,6 @@ do ff=1,volume_mesh_full%nface
                                             exit 
                                         end if 
                                     end do 
-
                                     vintvalid2 = 0 
                                     do aa=1,edge_clip_sm(etgt)%nfint(abs(v2))
                                         if (edge_clip_sm(etgt)%vmface(abs(v2),aa) == ff) then 
@@ -1553,14 +1496,12 @@ do ff=1,volume_mesh_full%nface
                                             exit 
                                         end if 
                                     end do
-
                                     if ((vintvalid1 == 1) .AND. (vintvalid2 == 1)) then !both ends of this segment intersect the face
                                         nteselect = nteselect + 1
                                         te_select(nteselect,1) = edge_clip_sm(etgt)%vtx_idx(abs(v1))
                                         te_select(nteselect,2) = edge_clip_sm(etgt)%vtx_idx(abs(v2))
                                         ! print *, 'int - v2'
                                     end if
-                                   
                                 end if
                             end do 
                         else !Check if both vertices on this edge intersect the face 
@@ -1652,17 +1593,19 @@ do ff=1,volume_mesh_full%nface
                 nfaceb = nedge_face
                 do ee=1,nteselect
 
-                    !Check if dulicate 
+                    !Check if dulicate if any selected base volume mesh edges or edge segments are selected 
                     edg_dup = 0 
-                    do ii=nfaceb,nedge_face
-                        if ((face_ledge(ii,1) == -1*te_select(ee,1)) .AND. (face_ledge(ii,2) == -1*te_select(ee,2))) then 
-                            edg_dup = 1
-                            exit 
-                        elseif ((face_ledge(ii,2) == -1*te_select(ee,1)) .AND. (face_ledge(ii,1) == -1*te_select(ee,2))) then 
-                            edg_dup = 1
-                            exit 
-                        end if 
-                    end do 
+                    if (nfaceb .GE. 1) then 
+                        do ii=nfaceb,nedge_face
+                            if ((face_ledge(ii,1) == -1*te_select(ee,1)) .AND. (face_ledge(ii,2) == -1*te_select(ee,2))) then 
+                                edg_dup = 1
+                                exit 
+                            elseif ((face_ledge(ii,2) == -1*te_select(ee,1)) .AND. (face_ledge(ii,1) == -1*te_select(ee,2))) then 
+                                edg_dup = 1
+                                exit 
+                            end if 
+                        end do 
+                    end if 
 
                     !Add if new
                     if (edg_dup == 0) then 
@@ -1675,30 +1618,52 @@ do ff=1,volume_mesh_full%nface
                     end if 
                 end do 
 
-                !Build v2e for the clipped face mesh 
+                !Initialise arrays for this face 
                 do ee=1,nedge_face
+                    valence_flocal(face_ledge(ee,1)) = 0
+                    valence_flocal(face_ledge(ee,2)) = 0  
                     v2e_flocal(face_ledge(ee,1),:) = 0
                     v2e_flocal(face_ledge(ee,2),:) = 0  
+                    vtx_face_pos(face_ledge(ee,1),:) = 0
+                    vtx_face_pos(face_ledge(ee,2),:) = 0  
                 end do 
+
+                !Build v2e for the clipped face mesh and tag high valence if present 
+                vlnceflag = 0 
                 do ee=1,nedge_face
-                    if (v2e_flocal(face_ledge(ee,1),1) == 0) then 
-                        v2e_flocal(face_ledge(ee,1),1) = ee 
-                    else
-                        v2e_flocal(face_ledge(ee,1),2) = ee 
-                    end if 
-                    if (v2e_flocal(face_ledge(ee,2),1) == 0) then 
-                        v2e_flocal(face_ledge(ee,2),1) = ee 
-                    else
-                        v2e_flocal(face_ledge(ee,2),2) = ee 
-                    end if 
+                    valence_flocal(face_ledge(ee,1)) = valence_flocal(face_ledge(ee,1)) + 1
+                    v2e_flocal(face_ledge(ee,1),valence_flocal(face_ledge(ee,1))) = ee 
+                    valence_flocal(face_ledge(ee,2)) = valence_flocal(face_ledge(ee,2)) + 1
+                    v2e_flocal(face_ledge(ee,2),valence_flocal(face_ledge(ee,2))) = ee 
                 end do 
+                if ((maxval(valence_flocal(face_ledge(1:nedge_face,1))) .GT. 2) .OR. &
+                    (maxval(valence_flocal(face_ledge(1:nedge_face,2))) .GT. 2)) then !if maxvalence is greater than two tag as a high valence case
+                    vlnceflag = 1
+                    ! print *, '=== maxvalence e1 / e2 = ',maxval(valence_flocal(face_ledge(1:nedge_face,1))),&
+                    !                                  maxval(valence_flocal(face_ledge(1:nedge_face,2))) 
+                    ! vlnceflag = face_ledge(maxloc(valence_flocal(face_ledge(1:nedge_face,1)),1),1)
+                    ! print *,'vh 1 = ', vlnceflag
+                    ! if (vlnceflag .GT. 0) then
+                    !     print *, volume_mesh_full%vtx(vlnceflag,:)
+                    ! else
+                    !     print *, smesh_vtx_full(abs(vlnceflag),:)
+                    ! end if 
+                    ! vlnceflag = face_ledge(maxloc(valence_flocal(face_ledge(1:nedge_face,2)),1),2)
+                    ! print *,'vh 2 = ', vlnceflag
+                    ! if (vlnceflag .GT. 0) then
+                    !     print *, volume_mesh_full%vtx(vlnceflag,:)
+                    ! else
+                    !     print *, smesh_vtx_full(abs(vlnceflag),:)
+                    ! end if 
+                    ! vlnceflag = 1
+                end if 
 
                 !Debug print (if non contiguous face)=============================
                 if ((minval(v2e_flocal(face_ledge(1:nedge_face,1),1)) == 0) .OR. &
                     (minval(v2e_flocal(face_ledge(1:nedge_face,1),2)) == 0) .OR. &
                     (minval(v2e_flocal(face_ledge(1:nedge_face,2),1)) == 0) .OR. &
                     (minval(v2e_flocal(face_ledge(1:nedge_face,2),2)) == 0)) then 
-                ! if (ff == 25784) then 
+                ! if (ff == 1156) then 
                     print *, 'Zero V2E Face = ', ff,' ====================='
                     print *, 'V2E zero at: '
                     do ee=1,nedge_face
@@ -1721,8 +1686,6 @@ do ff=1,volume_mesh_full%nface
                             print *, Nf(:)
                         end if 
                     end do 
-
-
                     print *, 'face edges'
                     do ee=1,volume_mesh_full%faces(ff)%nvtx
                         etgt = volume_mesh_full%faces(ff)%edges(ee)
@@ -1762,7 +1725,7 @@ do ff=1,volume_mesh_full%nface
                     !         print *, surface_adtree%tree(node_select(nn))%entry(kk)
                     !     end do 
                     ! end do 
-                    ! stop
+                    stop
                 end if
 
                 !Construct set of full faces from the clipped face mesh 
@@ -1773,12 +1736,40 @@ do ff=1,volume_mesh_full%nface
 
                     !Find starting edge 
                     e0 = 0 
-                    do ee=1,nedge_face
-                        if (edge_face_idx(ee) == 0) then 
-                            e0 = ee 
-                            exit 
-                        end if
-                    end do 
+                    if (vlnceflag == 0) then !all vertices in the clipping set have valence = 2 so any edge is a valid start point 
+                        do ee=1,nedge_face
+                            if (edge_face_idx(ee) == 0) then 
+                                e0 = ee 
+                                exit 
+                            end if
+                        end do 
+                    else !some vertices have valence > 2 so pick an edge containting one of these to start from if any are available 
+
+                        !Find and select a high valence ended edge vlnceflag
+                        do ee=1,nedge_face
+                            if (edge_face_idx(ee) == 0) then 
+                                if ((valence_flocal(face_ledge(ee,1)) .GT. 2) .OR. (valence_flocal(face_ledge(ee,2)) .GT. 2)) then 
+                                    e0 = ee 
+                                    exit 
+                                end if 
+                            end if
+                        end do 
+
+                        !If no high valence ended edges are avalable then pick a normal edge and/or set the valence flag to zero 
+                        if (e0 == 0) then 
+
+                            !Set flag to zero 
+                            vlnceflag = 0 
+
+                            !Select edge if any 
+                            do ee=1,nedge_face
+                                if (edge_face_idx(ee) == 0) then 
+                                    e0 = ee 
+                                    exit 
+                                end if
+                            end do 
+                        end if 
+                    end if 
 
                     !Exit if no new edges located
                     if (e0 == 0) then 
@@ -1790,12 +1781,28 @@ do ff=1,volume_mesh_full%nface
 
                     !Set initial parameters 
                     ebase = e0
-                    vbase = face_ledge(ebase,2) !set to end 2 for the correct direction 
-                    edge_face_idx(e0) = nface_clip 
+                    if (vlnceflag == 0) then !set to end 2 for the correct direction 
+                        vbase = face_ledge(ebase,2) 
+                        v0face = face_ledge(ebase,1)
+                    else !pick an end without a high valence vertex
+                        if (valence_flocal(face_ledge(ebase,2)) .GT. 2) then 
+                            vbase = face_ledge(ebase,1) 
+                            v0face = face_ledge(ebase,2)
+                        else
+                            vbase = face_ledge(ebase,2) 
+                            v0face = face_ledge(ebase,1)
+                        end if 
+                    end if 
+                    edge_face_idx(ebase) = nface_clip 
 
                     !Initialise this curve 
-                    vtx_face_pos(vbase) = 1
-                    vtx_face_idx(vbase) = nface_clip
+                    do aa=1,4 
+                        if (vtx_face_pos(vbase,aa) == 0) then 
+                            vtx_face_pos(vbase,aa) = 1
+                            vtx_face_idx(vbase,aa) = nface_clip
+                            exit
+                        end if 
+                    end do 
                     face_nvtx(nface_clip) = 1
 
                     !Mesh face 
@@ -1803,15 +1810,13 @@ do ff=1,volume_mesh_full%nface
 
                         !Find next edge
                         enew = 0 
-                        ! vbase = face_ledge(ebase,1)
-                        if (edge_face_idx(v2e_flocal(vbase,1)) == 0) then !take edge 1
-                            enew = v2e_flocal(vbase,1)
-                        elseif (edge_face_idx(v2e_flocal(vbase,2)) == 0) then !take edge 2
-                            enew = v2e_flocal(vbase,2)
-                        else !no unset edges so face is closed hence exit 
-                            exit 
-                        end if 
-
+                        do aa=1,valence_flocal(vbase)
+                            if (edge_face_idx(v2e_flocal(vbase,aa)) == 0) then 
+                                enew = v2e_flocal(vbase,aa)
+                                exit 
+                            end if  
+                        end do 
+                        
                         !If no new edge found then loop is complete to exit search 
                         if (enew == 0) then 
                             exit 
@@ -1826,26 +1831,44 @@ do ff=1,volume_mesh_full%nface
 
                         !Add vnew to the current face
                         face_nvtx(nface_clip) = face_nvtx(nface_clip) + 1
-                        vtx_face_pos(vnew) = face_nvtx(nface_clip)
-                        vtx_face_idx(vnew) = nface_clip 
+                        do aa=1,4 
+                            if (vtx_face_pos(vnew,aa) == 0) then 
+                                vtx_face_pos(vnew,aa) = face_nvtx(nface_clip)
+                                vtx_face_idx(vnew,aa) = nface_clip
+                                exit
+                            end if 
+                        end do 
 
                         !Add edge to this face index 
                         edge_face_idx(enew) = nface_clip
 
-                        !Update base 
+                        !Update base location
                         ebase = enew 
                         vbase = vnew 
+
+                        !If the new base vertex is the starting vertex then exit as the face is closed 
+                        if (vbase == v0face) then 
+                            exit 
+                        end if 
+
+                        !If the base vertex is high valence and the tag is still active then exit 
+                        if (vlnceflag == 1) then 
+                            if (valence_flocal(vbase) .GT. 2) then 
+                                exit 
+                            end if 
+                        end if 
                     end do
-                    ! print *, face_nvtx(nface_clip) 
+                    !print *, face_nvtx(nface_clip) 
                 end do 
+                !print *, 'nface_clip = ',nface_clip
 
                 !Debug =============================
                 ! if (nface_clip .GT. 1) then 
                 !     print *, 'fbase = ',ff,' - Nface = ',nface_clip
                 !     print *, 'Face = ', ff
-                !     do ee=1,4
-                !         print *, volume_mesh_full%vtx(volume_mesh_full%faces(ff)%vertices(ee),:)
-                !     end do 
+                !     ! do ee=1,4
+                !     !     print *, volume_mesh_full%vtx(volume_mesh_full%faces(ff)%vertices(ee),:)
+                !     ! end do 
     
                 !     print *, '----------- nedge_face = ',nedge_face 
                 !     do ee=1,nedge_face
@@ -1856,24 +1879,26 @@ do ff=1,volume_mesh_full%nface
 
                 !     open(11,file='io/face_cvtx.dat') 
                 !     do ee=1,nedge_face
-                !         if (face_ledge(ee,1) .GT. 0) then 
-                !             Nf(:) = volume_mesh_full%vtx(face_ledge(ee,1),:)
-                !         else
-                !             Nf(:) = smesh_vtx_full(abs(face_ledge(ee,1)),:) !volume_mesh_full%lsurface(ctgt)%vertices(abs(face_ledge(ee,1)),:)
+                !         if (edge_face_idx(ee) == 3) then 
+                !             if (face_ledge(ee,1) .GT. 0) then 
+                !                 Nf(:) = volume_mesh_full%vtx(face_ledge(ee,1),:)
+                !             else
+                !                 Nf(:) = smesh_vtx_full(abs(face_ledge(ee,1)),:) !volume_mesh_full%lsurface(ctgt)%vertices(abs(face_ledge(ee,1)),:)
+                !             end if 
+                !             if (face_ledge(ee,2) .GT. 0) then 
+                !                 Nft(:) = volume_mesh_full%vtx(face_ledge(ee,2),:)
+                !             else
+                !                 Nft(:) = smesh_vtx_full(abs(face_ledge(ee,2)),:)!volume_mesh_full%lsurface(ctgt)%vertices(abs(face_ledge(ee,2)),:)
+                !             end if 
+                !             write(11,*) Nf(:),Nft(:)
                 !         end if 
-                !         if (face_ledge(ee,2) .GT. 0) then 
-                !             Nft(:) = volume_mesh_full%vtx(face_ledge(ee,2),:)
-                !         else
-                !             Nft(:) = smesh_vtx_full(abs(face_ledge(ee,2)),:)!volume_mesh_full%lsurface(ctgt)%vertices(abs(face_ledge(ee,2)),:)
-                !         end if 
-                !         write(11,*) Nf(:),Nft(:)
                 !     end do 
                 !     close(11)
 
-                !     print *,'Face : ',ff
-                !     do vv=1,volume_mesh_full%faces(ff)%face_clipped(ii)%nvtx
-                !         print *, volume_mesh_full%faces(ff)%face_clipped(ii)%vertices(vv),edge_face_idx(vv)
-                !     end do 
+                !     ! print *,'Face : ',ff
+                !     ! do vv=1,volume_mesh_full%faces(ff)%face_clipped(ii)%nvtx
+                !     !     print *, volume_mesh_full%faces(ff)%face_clipped(ii)%vertices(vv),edge_face_idx(vv)
+                !     ! end do 
                 ! end if 
 
                 !Build full clipped faces 
@@ -1888,30 +1913,25 @@ do ff=1,volume_mesh_full%nface
                     allocate(volume_mesh_full%faces(ff)%face_clipped(ii)%vertices(face_nvtx(ii)))
                     volume_mesh_full%faces(ff)%face_clipped(ii)%vertices(:) = 0 
 
-
                     !Accumulate face 
                     do ee=1,nedge_face
                         vtgt = face_ledge(ee,1) 
-                        if (vtgt .NE. 0) then 
-                            if (vtx_face_idx(vtgt) == ii) then 
-                                volume_mesh_full%faces(ff)%face_clipped(ii)%vertices(vtx_face_pos(vtgt)) = vtgt
-                                face_ledge(ee,1) = 0 
+                        do aa=1,4   
+                            if (vtx_face_idx(vtgt,aa) == ii) then 
+                                volume_mesh_full%faces(ff)%face_clipped(ii)%vertices(vtx_face_pos(vtgt,aa)) = vtgt
+                                exit 
                             end if 
-                        end if 
+                        end do 
                         vtgt = face_ledge(ee,2) 
-                        if (vtgt .NE. 0) then 
-                            if (vtx_face_idx(vtgt) == ii) then 
-                                volume_mesh_full%faces(ff)%face_clipped(ii)%vertices(vtx_face_pos(vtgt)) = vtgt
-                                face_ledge(ee,2) = 0 
+                        do aa=1,4   
+                            if (vtx_face_idx(vtgt,aa) == ii) then 
+                                volume_mesh_full%faces(ff)%face_clipped(ii)%vertices(vtx_face_pos(vtgt,aa)) = vtgt
+                                exit 
                             end if 
-                        end if 
+                        end do 
                     end do 
 
-                    ! print *, '-----------------'
-                    ! print *, volume_mesh_full%faces(ff)%vertices(:)
-                    ! print *, volume_mesh_full%faces(ff)%face_clipped(ii)%vertices(:)
-
-                    !Check and set face orientation ------
+                    !Check and set clipped face orientation ------
                     !Normal vector to the face 
                     Nft(:) = 0.0d0 
                     do vv=1,volume_mesh_full%faces(ff)%face_clipped(ii)%nvtx
@@ -1933,26 +1953,19 @@ do ff=1,volume_mesh_full%nface
                         Nft(2) = Nft(2) - 0.5d0*(vtxN(1) + vtxC(1))*(vtxN(3) - vtxC(3))
                         Nft(3) = Nft(3) - 0.5d0*(vtxN(2) + vtxC(2))*(vtxN(1) - vtxC(1))
                     end do 
-                    ! print *,'---------'
-                    ! print *,'Fdir = ', dot_product(Nf,Nft)
-                    ! print *,Nf
-                    ! print *,Nft
 
                     !Flip if required 
-                    if (dot_product(Nf,Nft) .LT. 0.0d0) then 
-                        fliparray(1:volume_mesh_full%faces(ff)%face_clipped(ii)%nvtx) = &
-                        volume_mesh_full%faces(ff)%face_clipped(ii)%vertices(:)
-                        do vv=1,volume_mesh_full%faces(ff)%face_clipped(ii)%nvtx
-                            vc = volume_mesh_full%faces(ff)%face_clipped(ii)%nvtx - vv + 1
-                            volume_mesh_full%faces(ff)%face_clipped(ii)%vertices(vv) = fliparray(vc)
-                        end do 
-                        ! print *, '*** flip face'
+                    if (dot_product(Nf,Nft) .GT. 0.0d0) then 
+                        volume_mesh_full%faces(ff)%face_clipped(ii)%vertices(:) = &
+                        flip_face(volume_mesh_full%faces(ff)%face_clipped(ii)%nvtx,&
+                        volume_mesh_full%faces(ff)%face_clipped(ii)%vertices(:))
                     end if 
                 end do 
 
-                !If the face is internally clipped flip the direction of all internally clipped faces to subtract from the main face 
+                !If the face is internally clipped and a face is formed from the base volume mesh edges of this face (so at least two faces have been built)
+                !flip the direction of all internally clipped faces to subtract from the main face 
                 !and set the required properties to avoid bisecting this cell by not tagging the subtracted face 
-                if (is_clipped == 2) then 
+                if ((is_clipped == 2) .AND. (nface_clip .GE. 2)) then 
 
                     !Find the face in the clip structure with all vertices from the base face 
                     fsubparent = 0 
@@ -1995,12 +2008,9 @@ do ff=1,volume_mesh_full%nface
                         if (vtx_in_base_face == 0) then 
 
                             !Flip face
-                            fliparray(1:volume_mesh_full%faces(ff)%face_clipped(ii)%nvtx) = &
-                            volume_mesh_full%faces(ff)%face_clipped(ii)%vertices(:)
-                            do vv=1,volume_mesh_full%faces(ff)%face_clipped(ii)%nvtx
-                                vc = volume_mesh_full%faces(ff)%face_clipped(ii)%nvtx - vv + 1
-                                volume_mesh_full%faces(ff)%face_clipped(ii)%vertices(vv) = fliparray(vc)
-                            end do
+                            volume_mesh_full%faces(ff)%face_clipped(ii)%vertices(:) = &
+                            flip_face(volume_mesh_full%faces(ff)%face_clipped(ii)%nvtx,&
+                            volume_mesh_full%faces(ff)%face_clipped(ii)%vertices(:))
 
                             !Tag as internally subtracted face and tag parent as the correct clipped face in this structure 
                             volume_mesh_full%faces(ff)%face_clipped(ii)%ftype = 'int'
@@ -2028,13 +2038,14 @@ do ff=1,volume_mesh_full%nface
                     allocate(volume_mesh_full%faces(ff)%face_clipped(nface_clip))
                     volume_mesh_full%faces(ff)%face_clipped(1)%nvtx = volume_mesh_full%faces(ff)%nvtx
                     allocate(volume_mesh_full%faces(ff)%face_clipped(1)%vertices(volume_mesh_full%faces(ff)%nvtx))
-                    volume_mesh_full%faces(ff)%face_clipped(1)%vertices(:) = volume_mesh_full%faces(ff)%vertices(:)
+                    ! volume_mesh_full%faces(ff)%face_clipped(1)%vertices(:) = volume_mesh_full%faces(ff)%vertices(:)
+                    volume_mesh_full%faces(ff)%face_clipped(1)%vertices(:) = &
+                    flip_face(volume_mesh_full%faces(ff)%nvtx,volume_mesh_full%faces(ff)%vertices(:))
                     volume_mesh_full%faces(ff)%face_clipped(1)%ftype = 'ret'
                     volume_mesh_full%faces(ff)%face_clipped(1)%fparent = ff
                 else
                     volume_mesh_full%faces(ff)%nfclipped = 0
                 end if 
-
             end if 
         else !Retain full face if each edge is the correct type type_tgt
 
@@ -2056,7 +2067,9 @@ do ff=1,volume_mesh_full%nface
                 allocate(volume_mesh_full%faces(ff)%face_clipped(nface_clip))
                 volume_mesh_full%faces(ff)%face_clipped(1)%nvtx = volume_mesh_full%faces(ff)%nvtx
                 allocate(volume_mesh_full%faces(ff)%face_clipped(1)%vertices(volume_mesh_full%faces(ff)%nvtx))
-                volume_mesh_full%faces(ff)%face_clipped(1)%vertices(:) = volume_mesh_full%faces(ff)%vertices(:)
+                ! volume_mesh_full%faces(ff)%face_clipped(1)%vertices(:) = volume_mesh_full%faces(ff)%vertices(:)
+                volume_mesh_full%faces(ff)%face_clipped(1)%vertices(:) = &
+                flip_face(volume_mesh_full%faces(ff)%nvtx,volume_mesh_full%faces(ff)%vertices(:))
                 volume_mesh_full%faces(ff)%face_clipped(1)%ftype = 'ret'
                 volume_mesh_full%faces(ff)%face_clipped(1)%fparent = ff
             else
@@ -2083,7 +2096,9 @@ do ff=1,volume_mesh_full%nface
             allocate(volume_mesh_full%faces(ff)%face_clipped(nface_clip))
             volume_mesh_full%faces(ff)%face_clipped(1)%nvtx = volume_mesh_full%faces(ff)%nvtx
             allocate(volume_mesh_full%faces(ff)%face_clipped(1)%vertices(volume_mesh_full%faces(ff)%nvtx))
-            volume_mesh_full%faces(ff)%face_clipped(1)%vertices(:) = volume_mesh_full%faces(ff)%vertices(:)
+            ! volume_mesh_full%faces(ff)%face_clipped(1)%vertices(:) = volume_mesh_full%faces(ff)%vertices(:)
+            volume_mesh_full%faces(ff)%face_clipped(1)%vertices(:) = &
+            flip_face(volume_mesh_full%faces(ff)%nvtx,volume_mesh_full%faces(ff)%vertices(:))
             volume_mesh_full%faces(ff)%face_clipped(1)%ftype = 'ret'
             volume_mesh_full%faces(ff)%face_clipped(1)%fparent = ff
         else
@@ -2113,8 +2128,8 @@ type(cm3d_options) :: cm3dopt
 integer(in) :: ff,ee,ii,kk,nn,aa,vv
 integer(in) :: nint_tri_tot,etgt,nftriint,ftgt,vtgt,nint_face,ie,iv,intnew,ev1,ev2,vvejoined
 integer(in) :: faces_on_tri(surface_mesh%nfcs),ftselected(volume_mesh_full%nface)
-integer(in) :: int_from_face(50,3)
-real(dp) :: intloc(50,3)
+integer(in) :: int_from_face(cm3dopt%stnintmax+1,3)
+real(dp) :: intloc(cm3dopt%stnintmax+1,3)
 
 !Build edges for each triangle 
 nftriint = 0 
@@ -2128,6 +2143,8 @@ do ff=1,surface_mesh%nfcs
     do ee=1,3
         etgt = surface_mesh%F2E(ff,ee)
         nint_tri_tot = nint_tri_tot + edge_clip_sm(etgt)%nint
+        vtgt = surface_mesh%connectivity(ff,ee)
+        nint_tri_tot = nint_tri_tot + vtx_clip_sm(vtgt)%nintersect
     end do 
 
     !If any intersections 
@@ -2229,7 +2246,6 @@ do ff=1,surface_mesh%nfcs
                 vtgt = surface_mesh%connectivity(ff,vv)
                 do aa=1,vtx_clip_sm(vtgt)%nintersect
                     if (vtx_clip_sm(vtgt)%face_int_idx(aa) == ftgt) then 
-                    
                         intnew = 1 
                         do nn=1,nint_face
                             if (int_from_face(nn,1) == vtgt) then 
@@ -2237,7 +2253,6 @@ do ff=1,surface_mesh%nfcs
                                 exit
                             end if 
                         end do
-
                         if (intnew == 1) then 
                             nint_face = nint_face + 1
                             int_from_face(nint_face,1) = vtgt
@@ -2245,7 +2260,6 @@ do ff=1,surface_mesh%nfcs
                             int_from_face(nint_face,3) = 0
                             intloc(nint_face,:) = surface_mesh%vertices(vtgt,:)
                         end if
-
                     end if 
                 end do 
             end do 
@@ -2256,6 +2270,10 @@ do ff=1,surface_mesh%nfcs
                 ftgt,' - ',ff,nint_face
                 do ii=1,nint_face
                     print *,int_from_face(ii,:),' // ',intloc(ii,:)
+                end do 
+                print *,'surface face vertices = '
+                do ii=1,3
+                    print *,surface_mesh%vertices(surface_mesh%connectivity(ff,ii),:)
                 end do 
                 cycle
             end if 
@@ -2304,16 +2322,16 @@ do ff=1,surface_mesh%nfcs
                         !If the vertex intersection is neither of the vertices on this edge then add 
                         if ((int_from_face(iv,1) .NE. surface_mesh%edges(etgt,1)) .AND.&
                             (int_from_face(iv,1) .NE. surface_mesh%edges(etgt,2))) then 
-                                if (tri_clip_sm(ff)%nedge+1 .GT. tri_clip_sm(ff)%nitem) then !append
-                                    call append_tri_clip_entry(tri_clip_sm,tri_clip_sm(ff)%nitem*2,ff)
-                                    if (tri_clip_sm(ff)%nitem .GT. cm3dopt%max_int_size) then 
-                                        cm3dopt%max_int_size = tri_clip_sm(ff)%nitem
-                                    end if
+                            if (tri_clip_sm(ff)%nedge+1 .GT. tri_clip_sm(ff)%nitem) then !append
+                                call append_tri_clip_entry(tri_clip_sm,tri_clip_sm(ff)%nitem*2,ff)
+                                if (tri_clip_sm(ff)%nitem .GT. cm3dopt%max_int_size) then 
+                                    cm3dopt%max_int_size = tri_clip_sm(ff)%nitem
                                 end if
-                                tri_clip_sm(ff)%nedge = tri_clip_sm(ff)%nedge + 1
-                                tri_clip_sm(ff)%edges(tri_clip_sm(ff)%nedge,1) = int_from_face(1,1)
-                                tri_clip_sm(ff)%edges(tri_clip_sm(ff)%nedge,2) = int_from_face(2,1)
-                                tri_clip_sm(ff)%edges(tri_clip_sm(ff)%nedge,3) = ftgt
+                            end if
+                            tri_clip_sm(ff)%nedge = tri_clip_sm(ff)%nedge + 1
+                            tri_clip_sm(ff)%edges(tri_clip_sm(ff)%nedge,1) = int_from_face(1,1)
+                            tri_clip_sm(ff)%edges(tri_clip_sm(ff)%nedge,2) = int_from_face(2,1)
+                            tri_clip_sm(ff)%edges(tri_clip_sm(ff)%nedge,3) = ftgt
                         end if 
                 elseif ((int_from_face(1,2) == 3) .AND. (int_from_face(2,2) == 3)) then !Both vertex intersects
 
@@ -2368,13 +2386,269 @@ end subroutine build_surftri_internal_edges
 
 
 
+!Subroutine to assign volume mesh cells to each surface mesh vertex ===========================
+subroutine assign_smvtx_vmcells(edge_clip_sm,vtx_clip_sm,surface_mesh,volume_mesh_full)
+implicit none 
+
+!Variables - Import
+type(surface_data) :: surface_mesh
+type(edgeint), dimension(:) :: edge_clip_sm
+type(vtx_intersect), dimension(:) :: vtx_clip_sm
+type(vol_mesh_data) :: volume_mesh_full
+
+!Variables - Local
+integer(in) :: ee,ff
+integer(in) :: ftgt,ev1,ev2,cleft,cright,nupdate,nfi,cell_selected
+integer(in) :: cell_from_face(12),cell_select(volume_mesh_full%ncell)
+real(dp) :: dotval
+real(dp) :: Nf(3),edir(3)
+
+!Assign a cell to each vertex on an intersecting edge 
+cell_select(:) = 0 
+cell_from_face(:) = 0 
+allocate(surface_mesh%vtx_vmesh_cell(surface_mesh%nvtx))
+surface_mesh%vtx_vmesh_cell(:) = 0 
+do ee=1,surface_mesh%nedge
+    if (edge_clip_sm(ee)%nint .GE. 1) then 
+
+        !Vertices 
+        ev1 = surface_mesh%edges(ee,1)
+        ev2 = surface_mesh%edges(ee,2)
+
+        !Edge direction 
+        edir(:) = surface_mesh%vertices(ev2,:) - surface_mesh%vertices(ev1,:)
+
+        !Assign start vertex
+        if (surface_mesh%vtx_vmesh_cell(ev1) == 0) then 
+            if (vtx_clip_sm(ev1)%nintersect == 0) then !Not an intersecting vertex 
+                if (edge_clip_sm(ee)%nfint(1) == 1) then !If a proper intersection with a single face 
+
+                    !Target face 
+                    ftgt = edge_clip_sm(ee)%vmface(1,1)
+
+                    !Cells 
+                    cleft = volume_mesh_full%faces(ftgt)%cleft
+                    cright = volume_mesh_full%faces(ftgt)%cright
+
+                    !Face normal vector 
+                    Nf = newell_normal(volume_mesh_full%faces(ftgt)%nvtx,volume_mesh_full%faces(ftgt)%vertices,volume_mesh_full%vtx)
+
+                    !Assign 
+                    dotval = dot_product(edir,Nf)
+                    if (dotval .GT. 0.0d0) then 
+                        surface_mesh%vtx_vmesh_cell(ev1) = cleft
+                    elseif (dotval .LT. 0.0d0) then 
+                        surface_mesh%vtx_vmesh_cell(ev1) = cright
+                    else
+                        !print *, '** (fi) zero dot intersection sm edge -> vm face at edge ',ee
+                    end if 
+                elseif (edge_clip_sm(ee)%nfint(1) .GT. 1) then !If a proper intersection with a multiple faces
+
+                    !Classify cell on all faces 
+                    nfi = edge_clip_sm(ee)%nfint(1)
+                    do ff=1,edge_clip_sm(ee)%nfint(1)
+
+                        !Target face 
+                        ftgt = edge_clip_sm(ee)%vmface(1,ff)
+
+                        !Cells 
+                        cleft = volume_mesh_full%faces(ftgt)%cleft
+                        cright = volume_mesh_full%faces(ftgt)%cright
+
+                        !Face normal vector 
+                        Nf = newell_normal(volume_mesh_full%faces(ftgt)%nvtx,volume_mesh_full%faces(ftgt)%vertices,&
+                        volume_mesh_full%vtx)
+
+                        !Assign 
+                        dotval = dot_product(edir,Nf)
+                        if (dotval .GT. 0.0d0) then 
+                            cell_from_face(ff) = cleft
+                        elseif (dotval .LT. 0.0d0) then 
+                            cell_from_face(ff) = cright
+                        else
+                            !print *, '** (ei) zero dot intersection sm edge -> vm face at edge ',ee
+                            cell_from_face(ff) = 0
+                        end if 
+                    end do
+
+                    !Select cell with two agreeing faces 
+                    cell_selected = 0 
+                    do ff=1,nfi 
+                        if (cell_from_face(ff) .GT. 0) then 
+                            cell_select(cell_from_face(ff)) = cell_select(cell_from_face(ff)) + 1
+                        end if 
+                    end do 
+                    do ff=1,nfi 
+                        if (cell_from_face(ff) .GT. 0) then 
+                            if (cell_select(cell_from_face(ff)) == 2) then 
+                                cell_selected = cell_from_face(ff)
+                                exit 
+                            end if 
+                        end if 
+                    end do 
+
+                    !Store 
+                    if (cell_selected .GT. 0) then 
+                        surface_mesh%vtx_vmesh_cell(ev1) = cell_selected
+                    else    
+                        print *, '** no cell selected at edge ',ee
+                    end if 
+
+                    !Reset selected cell counts 
+                    do ff=1,nfi 
+                        if (cell_from_face(ff) .GT. 0) then 
+                            cell_select(cell_from_face(ff)) = 0
+                        end if 
+                    end do 
+          
+                    !Debug print 
+                    ! print *, '============ mfint 1',ev1
+                    ! print *, 'edge = ',ev1,ev2,' // ',ee
+                    ! print *, 'nint = ', edge_clip_sm(ee)%nfint(1)
+                    ! print *, cell_from_face(1:edge_clip_sm(ee)%nfint(1))
+                    ! print *, edge_clip_sm(ee)%vmface(1,1:edge_clip_sm(ee)%nfint(1))
+                end if 
+            end if 
+        end if 
+
+        !Assign end vertex
+        if (surface_mesh%vtx_vmesh_cell(ev2) == 0) then 
+            if (vtx_clip_sm(ev2)%nintersect == 0) then !Not an intersecting vertex 
+                if (edge_clip_sm(ee)%nfint(edge_clip_sm(ee)%nint) == 1) then !If a proper intersection with a face 
+
+                    !Target face 
+                    ftgt = edge_clip_sm(ee)%vmface(edge_clip_sm(ee)%nint,1)
+
+                    !Cells 
+                    cleft = volume_mesh_full%faces(ftgt)%cleft
+                    cright = volume_mesh_full%faces(ftgt)%cright
+
+                    !Face normal vector 
+                    Nf = newell_normal(volume_mesh_full%faces(ftgt)%nvtx,volume_mesh_full%faces(ftgt)%vertices,volume_mesh_full%vtx)
+
+                    !Assign 
+                    dotval = dot_product(edir,Nf)
+                    if (dotval .LT. 0.0d0) then 
+                        surface_mesh%vtx_vmesh_cell(ev2) = cleft
+                    elseif (dotval .GT. 0.0d0) then 
+                        surface_mesh%vtx_vmesh_cell(ev2) = cright
+                    else
+                        !print *, '** (fi) zero dot intersection sm edge -> vm face at edge ',ee
+                    end if 
+                elseif (edge_clip_sm(ee)%nfint(edge_clip_sm(ee)%nint) .GT. 1) then !If a proper intersection with a multiple faces
+
+                    !Classify cell on all faces 
+                    nfi = edge_clip_sm(ee)%nfint(edge_clip_sm(ee)%nint)
+                    do ff=1,edge_clip_sm(ee)%nfint(edge_clip_sm(ee)%nint)
+
+                        !Target face 
+                        ftgt = edge_clip_sm(ee)%vmface(edge_clip_sm(ee)%nint,ff)
+
+                        !Cells 
+                        cleft = volume_mesh_full%faces(ftgt)%cleft
+                        cright = volume_mesh_full%faces(ftgt)%cright
+
+                        !Face normal vector 
+                        Nf = newell_normal(volume_mesh_full%faces(ftgt)%nvtx,volume_mesh_full%faces(ftgt)%vertices,&
+                        volume_mesh_full%vtx)
+
+                        !Assign 
+                        dotval = dot_product(edir,Nf)
+                        if (dotval .LT. 0.0d0) then 
+                            cell_from_face(ff) = cleft
+                        elseif (dotval .GT. 0.0d0) then 
+                            cell_from_face(ff) = cright
+                        else
+                            !print *, '** (ei) zero dot intersection sm edge -> vm face at edge ',ee
+                            cell_from_face(ff) = 0
+                        end if 
+                    end do 
+
+                    !Select cell with two agreeing faces 
+                    cell_selected = 0 
+                    do ff=1,nfi 
+                        if (cell_from_face(ff) .GT. 0) then 
+                            cell_select(cell_from_face(ff)) = cell_select(cell_from_face(ff)) + 1
+                        end if 
+                    end do 
+                    do ff=1,nfi 
+                        if (cell_from_face(ff) .GT. 0) then 
+                            if (cell_select(cell_from_face(ff)) == 2) then 
+                                cell_selected = cell_from_face(ff)
+                                exit 
+                            end if 
+                        end if 
+                    end do 
+
+                    !Store 
+                    if (cell_selected .GT. 0) then 
+                        surface_mesh%vtx_vmesh_cell(ev2) = cell_selected
+                    else    
+                        print *, '** no cell selected at edge ',ee
+                    end if 
+
+                    !Reset selected cell counts 
+                    do ff=1,nfi 
+                        if (cell_from_face(ff) .GT. 0) then 
+                            cell_select(cell_from_face(ff)) = 0
+                        end if 
+                    end do 
+
+                    !Debug print 
+                    ! print *, '============ mfint 2', ev2
+                    ! print *, 'edge = ',ev1,ev2,' // ',ee
+                    ! print *, 'nint = ', edge_clip_sm(ee)%nfint(edge_clip_sm(ee)%nint)
+                    ! print *, cell_from_face(1:edge_clip_sm(ee)%nfint(edge_clip_sm(ee)%nint))
+                    ! print *, edge_clip_sm(ee)%vmface(edge_clip_sm(ee)%nint,1:edge_clip_sm(ee)%nfint(edge_clip_sm(ee)%nint))
+                end if 
+            end if 
+        end if 
+    end if 
+end do 
+
+!Flood assignments though non clipped edges 
+do ff=1,surface_mesh%nedge
+    nupdate = 0 
+    do ee=1,surface_mesh%nedge
+        if (edge_clip_sm(ee)%nint == 0) then 
+
+            !Vertices 
+            ev1 = surface_mesh%edges(ee,1)
+            ev2 = surface_mesh%edges(ee,2)
+
+            !Flood
+            if ((surface_mesh%vtx_vmesh_cell(ev1) == 0) .AND. (surface_mesh%vtx_vmesh_cell(ev2) .NE. 0)) then 
+                if (vtx_clip_sm(ev1)%nintersect == 0) then 
+                    surface_mesh%vtx_vmesh_cell(ev1) = surface_mesh%vtx_vmesh_cell(ev2) 
+                    nupdate = nupdate + 1
+                end if 
+            elseif ((surface_mesh%vtx_vmesh_cell(ev1) .NE. 0) .AND. (surface_mesh%vtx_vmesh_cell(ev2) == 0)) then 
+                if (vtx_clip_sm(ev2)%nintersect == 0) then 
+                    surface_mesh%vtx_vmesh_cell(ev2) = surface_mesh%vtx_vmesh_cell(ev1) 
+                    nupdate = nupdate + 1
+                end if 
+            end if 
+        end if 
+    end do 
+    !print *, nupdate
+    if (nupdate == 0) then 
+        exit 
+    end if 
+end do 
+return 
+end subroutine assign_smvtx_vmcells
+
+
+
+
 !Clip surface edges to volume faces subroutine ===========================
-subroutine clip_surfedges2volfaces(edge_clip_sm,volume_mesh_full,surface_mesh,surface_adtree,cm3dopt,vtx_idx_smesh,vtx_clip_sm)
+subroutine clip_surfedges2volfaces(edge_clip_sm,vtx_clip_sm,edge_clip_vm,volume_mesh_full,surface_mesh,surface_adtree,&
+                                   cm3dopt,vtx_idx_smesh)
 implicit none 
 
 !Variables - Import
 integer(in) :: vtx_idx_smesh
-type(edgeint), dimension(:), allocatable :: edge_clip_sm
+type(edgeint), dimension(:), allocatable :: edge_clip_sm,edge_clip_vm
 type(vtx_intersect), dimension(:) :: vtx_clip_sm
 type(tree_data) :: surface_adtree
 type(surface_data) :: surface_mesh
@@ -2382,37 +2656,53 @@ type(vol_mesh_data) :: volume_mesh_full
 type(cm3d_options) :: cm3dopt
 
 !Variables - Local 
-character(len=2) :: vtxi_loc_fadj
-integer(in) :: ff,nn,kk,ee,ii,aa
-integer(in) :: nselected,nedge_selected,ttgt,etgt,vtgt,f1,f2,fint_exists,ev1,ev2,vft1,vft2,vft3,int_type,exist,neintrem,intfound
+character(len=2) :: vtxi_loc_sme,vtxi_loc_vmf,edgeloc,vtx_loc
+integer(in) :: ff,ff2,nn,kk,ee,ii,aa
+integer(in) :: nselected,nedge_selected,vm_intvalid,fadj,fadj_vm,ftgt
+integer(in) :: ttgt,etgt,etgt_vm,vtgt,f1,f2,ev1,ev2,vft2,vft3,int_type,exist
 integer(in) :: edges2int(surface_mesh%nedge),node_select(surface_adtree%nnode),edge_select(surface_mesh%nedge)
-real(dp) :: cpadSZ,zxmin,zxmax,zymin,zymax,zzmin,zzmax,zitol_bc
-real(dp) :: Nf(3),ve1(3),ve2(3),vt1(3),vt2(3),vt3(3),vint(3),vbc(3)
-real(dp) :: vt1_s(3),vt2_s(3),vt3_s(3)
+real(dp) :: cpadSZ,zxmin,zxmax,zymin,zymax,zzmin,zzmax,zitol,zitol_bc
+real(dp) :: Nf(3),ve1(3),ve2(3),vt1(3),vt2(3),vt3(3),vint(3)
+real(dp) :: vt1_s(3),vt2_s(3),vt3_s(3),vmf_midp(3),vint_bcv(3),vint_bcs(3),esurfnormal(3)
+type(smvmintlist) :: smvm_pint(surface_mesh%nedge)
 
 !Set comparison tollerance 
-zitol_bc = 1e-12_dp !Set as barycentric tollerance 
+zitol = cm3dopt%intcointol !Set as intersection tollerance
+zitol_bc = cm3dopt%baryloctol !Set as barycentric tollerance 
 
 !Initialise selected nodes 
 nselected = 0 
 node_select(:) = 0 
 
+!Initialise selected face type 
+do ee=1,surface_mesh%nedge
+    smvm_pint(ee)%nface = 0 
+    smvm_pint(ee)%nentry = cm3dopt%NintEmax
+    allocate(smvm_pint(ee)%faces(cm3dopt%NintEmax))
+    allocate(smvm_pint(ee)%fint_sm_loc(cm3dopt%NintEmax))
+    allocate(smvm_pint(ee)%fint_vm_loc(cm3dopt%NintEmax))
+    allocate(smvm_pint(ee)%fint_vm_edge(cm3dopt%NintEmax))
+    allocate(smvm_pint(ee)%fint_intersect_invalid(cm3dopt%NintEmax))
+    allocate(smvm_pint(ee)%fint_int_loc(cm3dopt%NintEmax,3))
+    smvm_pint(ee)%faces(:) = 0 
+    smvm_pint(ee)%fint_intersect_invalid(:) = 0 
+    smvm_pint(ee)%fint_int_loc(:,:) = 0.0d0 
+end do 
+
 !Initialise 
 vtgt = 0 
-fint_exists = 0 
 nedge_selected = 0 
 edge_select(:) = 0
 edges2int(:) = 0 
 
-!Clip each surface mesh face 
-neintrem = 0 
+!Accumulate volume mesh faces to clip against to each surface mesh edge 
 do ff=1,volume_mesh_full%nface
 
     !Build face normal vector 
     Nf = newell_normal(volume_mesh_full%faces(ff)%nvtx,volume_mesh_full%faces(ff)%vertices,volume_mesh_full%vtx)
 
     !Padding size 
-    cpadSZ = norm2(Nf)*0.01d0 
+    cpadSZ = norm2(Nf)*0.005d0
 
     !Intersection bounding box
     zxmin = minval(volume_mesh_full%vtx(volume_mesh_full%faces(ff)%vertices(:),1)) - cpadSZ !tgt bounding box -> xmin
@@ -2421,7 +2711,7 @@ do ff=1,volume_mesh_full%nface
     zymax = maxval(volume_mesh_full%vtx(volume_mesh_full%faces(ff)%vertices(:),2)) + cpadSZ !tgt bounding box -> ymax
     zzmin = minval(volume_mesh_full%vtx(volume_mesh_full%faces(ff)%vertices(:),3)) - cpadSZ !tgt bounding box -> zmin
     zzmax = maxval(volume_mesh_full%vtx(volume_mesh_full%faces(ff)%vertices(:),3)) + cpadSZ !tgt bounding box -> zmax
-
+   
     !Identify any triangle bounding boxes that may overlap the face 
     call search_ADtree(nselected,node_select,surface_adtree,zxmin,zxmax,zymin,zymax,zzmin,zzmax)
 
@@ -2445,11 +2735,15 @@ do ff=1,volume_mesh_full%nface
         end do 
         edge_select(edges2int(1:nedge_selected)) = 0 
 
-        !Set volume mesh face triangulation base vertex
-        vft1 = volume_mesh_full%faces(ff)%vertices(1)
-        vt1(:) = volume_mesh_full%vtx(vft1,:)
+        !Volume mesh face midpoint 
+        vmf_midp(1) = sum(volume_mesh_full%vtx(volume_mesh_full%faces(ff)%vertices(:),1))/real(volume_mesh_full%faces(ff)%nvtx,dp)
+        vmf_midp(2) = sum(volume_mesh_full%vtx(volume_mesh_full%faces(ff)%vertices(:),2))/real(volume_mesh_full%faces(ff)%nvtx,dp)
+        vmf_midp(3) = sum(volume_mesh_full%vtx(volume_mesh_full%faces(ff)%vertices(:),3))/real(volume_mesh_full%faces(ff)%nvtx,dp)
 
-        !Intersect selected surface mesh edges with the volume mesh face -> only add intersections at each end vertex of the volume mesh edge 
+        !Set as base triangle vertex
+        vt1(:) = vmf_midp(:)
+
+        !Check each edge for intersection on this volume mesh face 
         do ee=1,nedge_selected
 
             !Target edge 
@@ -2467,250 +2761,888 @@ do ff=1,volume_mesh_full%nface
             f1 = surface_mesh%E2F(etgt,1)
             f2 = surface_mesh%E2F(etgt,2)
 
-            !Search for intersect with this volume mesh face
-            intfound = 0 
-            do aa=2,volume_mesh_full%faces(ff)%nvtx-1
+            !Approximate surface normal at this edge 
+            if ((f1 .GT. 0) .AND. (f2 .GT. 0)) then 
+                fadj = f1 
+                esurfnormal(:) = 0.5d0*(surface_mesh%face_normal(f1,:) +  surface_mesh%face_normal(f2,:))
+            elseif (f1 .GT. 0) then
+                fadj = f1
+                esurfnormal(:) = surface_mesh%face_normal(f1,:)
+            elseif (f2 .GT. 0) then
+                fadj = f2
+                esurfnormal(:) = surface_mesh%face_normal(f2,:)
+            end if 
 
-                !Triangle on this face 
+            !Check triangulation of volume mesh face
+            do aa=1,volume_mesh_full%faces(ff)%nvtx
+
+                !Face edge end vertices 
                 vft2 = aa 
-                vft3 = aa + 1
+                vft3 = mod(aa,volume_mesh_full%faces(ff)%nvtx) + 1
                 vft2 = volume_mesh_full%faces(ff)%vertices(vft2)
                 vft3 = volume_mesh_full%faces(ff)%vertices(vft3)
-
-                !Vertices 
                 vt2(:) = volume_mesh_full%vtx(vft2,:)
                 vt3(:) = volume_mesh_full%vtx(vft3,:)
 
                 !Test intersection 
                 int_type = line_tri_intersect_bool(ve1,ve2,vt1,vt2,vt3)
-                if (int_type == 1) then 
+                if (int_type == 1) then !add this vm face to this sm edge 
 
-                    !Find intersection location (is within edge and triangle here)
+                    !Find intersection location 
                     vint = line_tri_intersect(ve1,ve2,vt1,vt2,vt3)
-                    
-                    !Find barycentric location in adjacent surface mesh faces 
-                    if (f1 .GT. 0) then 
-                        vt1_s(:) = surface_mesh%vertices(surface_mesh%connectivity(f1,1),:)
-                        vt2_s(:) = surface_mesh%vertices(surface_mesh%connectivity(f1,2),:)
-                        vt3_s(:) = surface_mesh%vertices(surface_mesh%connectivity(f1,3),:)
-                        vbc = get_barycentric_coordinates(vint,vt1_s,vt2_s,vt3_s)
-                        vtxi_loc_fadj = vtx_bary_tri_loc(vbc(1),vbc(2),vbc(3),zitol_bc)
-                        if (vtxi_loc_fadj(1:1) == 'v') then !if on vertex then select the vertex
-                            if (vtxi_loc_fadj == 'v1') then !on vertex 1
-                                vtgt = surface_mesh%connectivity(f1,1)
-                            elseif (vtxi_loc_fadj == 'v2') then !on vertex 2
-                                vtgt = surface_mesh%connectivity(f1,2)
-                            elseif (vtxi_loc_fadj == 'v3') then !on vertex 3
-                                vtgt = surface_mesh%connectivity(f1,3)
-                            end if 
-                        end if 
-                    else
-                        vt1_s(:) = surface_mesh%vertices(surface_mesh%connectivity(f2,1),:)
-                        vt2_s(:) = surface_mesh%vertices(surface_mesh%connectivity(f2,2),:)
-                        vt3_s(:) = surface_mesh%vertices(surface_mesh%connectivity(f2,3),:)
-                        vbc = get_barycentric_coordinates(vint,vt1_s,vt2_s,vt3_s)
-                        vtxi_loc_fadj = vtx_bary_tri_loc(vbc(1),vbc(2),vbc(3),zitol_bc)
-                        if (vtxi_loc_fadj(1:1) == 'v') then !if on vertex then select the vertex
-                            if (vtxi_loc_fadj == 'v1') then !on vertex 1
-                                vtgt = surface_mesh%connectivity(f2,1)
-                            elseif (vtxi_loc_fadj == 'v2') then !on vertex 2
-                                vtgt = surface_mesh%connectivity(f2,2)
-                            elseif (vtxi_loc_fadj == 'v3') then !on vertex 3
-                                vtgt = surface_mesh%connectivity(f2,3)
-                            end if 
-                        end if 
-                    end if 
-                    !print *, vtxi_loc_fadj
+                    vint_bcv = baryc_line_tri_intersect(ve1,ve2,vt1,vt2,vt3)
 
-                    !Force to this edge if intersection is determined within or outside the triangle 
-                    !(as intersecting ray is the edge the the intersection must lie along this edge)
-                    if (vtxi_loc_fadj == 'in') then 
-                        vtxi_loc_fadj = 'ef'
-                        print *, 'in force'
-                    end if 
-                    if (vtxi_loc_fadj == 'ot') then 
-                        vtxi_loc_fadj = 'ef'
-                        print *, 'out force'
-                    end if 
-                    !Maybe force to the closest vertex on this edge to be on the safe side???
+                    !Classify the location on the volume mesh face 
+                    vtxi_loc_vmf = vtx_bary_tri_loc(vint_bcv(1),vint_bcv(2),vint_bcv(3),zitol_bc)
 
-                    !If this edge intersects and the intersect lies at a vertex then store and cycle 
-                    if (vtxi_loc_fadj(1:1) == 'v') then !intersect lies on a vertex at the end of this edge (add to vtx_clip_sm)
-
-                        !Check if this face is new on this vertex 
-                        exist = 0
-                        do ii=1,vtx_clip_sm(vtgt)%nintersect
-                            if (vtx_clip_sm(vtgt)%face_int_idx(ii) == ff) then 
-                                exist = 1
-                                exit 
-                            end if 
-                        end do 
-
-                        !Add if new
-                        if (exist == 0) then 
-                            vtx_clip_sm(vtgt)%nintersect = vtx_clip_sm(vtgt)%nintersect + 1
-                            vtx_clip_sm(vtgt)%face_int_idx(vtx_clip_sm(vtgt)%nintersect) = ff 
-                            intfound = 1
-                            !print *, vtxi_loc_fadj
-                        end if 
+                    !Set internal to volume mesh face if not on the outer edge (e2) or its vertices (v2-v3)
+                    if ((vtxi_loc_vmf .NE. 'e2') .AND. (vtxi_loc_vmf .NE. 'v2') .AND. &
+                    (vtxi_loc_vmf .NE. 'v3') .AND. (vtxi_loc_vmf .NE. 'ot')) then
+                        vtxi_loc_vmf = 'in'
+                        ! print *, vtxi_loc_vmf
                     end if 
-                end if 
-                if (intfound == 1) then 
-                    exit 
-                end if 
+                    if (vtxi_loc_vmf == 'ot') then 
+                        print *, vint_bcv,' edge out = ',etgt
+                    end if 
+
+                    !Build virtual face with this edge and the surface normal
+                    vt1_s(:) = ve1(:)
+                    vt2_s(:) = ve2(:)
+                    vt3_s(:) = 0.5d0*(ve1(:) + ve2(:)) + esurfnormal(:)*norm2(ve2(:) - ve1(:))
+
+                    !Classify the location on this surface mesh edge by constructing a virtual face
+                    vint_bcs = project_to_barycentric(vint,vt1_s,vt2_s,vt3_s)
+                    vtxi_loc_sme = vtx_bary_tri_loc(vint_bcs(1),vint_bcs(2),vint_bcs(3),zitol_bc)
+
+                    !Add to intersection structure 
+                    if (smvm_pint(etgt)%nface+1 .GT. smvm_pint(etgt)%nentry) then !append if required
+                        call append_smvm_pint_entry(smvm_pint,etgt,2*smvm_pint(etgt)%nentry)
+                    end if
+                    smvm_pint(etgt)%nface = smvm_pint(etgt)%nface + 1
+                    smvm_pint(etgt)%faces(smvm_pint(etgt)%nface) = ff
+                    smvm_pint(etgt)%fint_vm_edge(smvm_pint(etgt)%nface) = aa 
+                    smvm_pint(etgt)%fint_vm_loc(smvm_pint(etgt)%nface) = vtxi_loc_vmf
+                    smvm_pint(etgt)%fint_sm_loc(smvm_pint(etgt)%nface) = vtxi_loc_sme
+                    smvm_pint(etgt)%fint_int_loc(smvm_pint(etgt)%nface,:) = vint(:)
+
+                    !Exit search for this edge 
+                    exit
+                end if
             end do 
         end do 
+    end if 
+end do 
 
-        !Intersect selected surface mesh edges with the volume mesh face -> only add intersections internal to each surface mesh edge 
-        do ee=1,nedge_selected
+!Set invalid intersections on faces adjacent to a volume mesh edge that an intersection will be snapped to 
+do ee=1,surface_mesh%nedge
+    if (smvm_pint(ee)%nface .GT. 0) then 
 
-            !Target edge 
-            etgt = edges2int(ee)
+        !Initialise validity 
+        smvm_pint(ee)%fint_intersect_invalid(:) = 0 
 
-            !Edge vertices 
-            ev1 = surface_mesh%edges(etgt,1)
-            ev2 = surface_mesh%edges(etgt,2)
+        !Collapse any sets of intersects where at least one is within tollerance of a vm edge into a single intersect on that vm edge 
+        do ff=1,smvm_pint(ee)%nface 
+            if ((smvm_pint(ee)%fint_sm_loc(ff)(1:1) == 'v') .AND. (smvm_pint(ee)%fint_intersect_invalid(ff) == 0)) then !search only vertex intersects on the sm edge first to ensure these are prioritised
+                if ((smvm_pint(ee)%fint_vm_loc(ff) == 'e2') .OR. (smvm_pint(ee)%fint_vm_loc(ff) == 'v2') &
+                .OR. (smvm_pint(ee)%fint_vm_loc(ff) == 'v3')) then !If within tollerance of a volume mesh edge 
 
-            !Edge end vertices
-            ve1(:) = surface_mesh%vertices(ev1,:)
-            ve2(:) = surface_mesh%vertices(ev2,:)
+                    !Volume mesh edge 
+                    etgt_vm = volume_mesh_full%faces(smvm_pint(ee)%faces(ff))%edges(smvm_pint(ee)%fint_vm_edge(ff))
 
-            !Adjacent surface faces to this edge 
-            f1 = surface_mesh%E2F(etgt,1)
-            f2 = surface_mesh%E2F(etgt,2)
+                    !Check if any other faces on E2f for this vm edge are in smvm_pint(ee)%faces(ff) for this surface mesh edge 
+                    do kk=1,4   
 
-            !Initialise intersection state with this face 
-            fint_exists = 0
+                        !Adjacent face 
+                        fadj_vm = volume_mesh_full%E2F(etgt_vm,kk)
 
-            !Check if either end vertex of this edge already intersects this face 
-            do ii=1,vtx_clip_sm(ev1)%nintersect
-                if (vtx_clip_sm(ev1)%face_int_idx(ii) == ff) then 
-                    fint_exists = 1
-                    exit 
+                        !If this is a valid face and not the current face 
+                        if ((fadj_vm .GT. 0) .AND. (fadj_vm .NE. smvm_pint(ee)%faces(ff))) then 
+                            do ff2=1,smvm_pint(ee)%nface !If fadj_vm is within smvm_pint(ee)%faces(:) then tag the intersect on fadj_vm (position ff2) as invalid 
+                                if ((ff2 .NE. ff) .AND. (smvm_pint(ee)%faces(ff2) == fadj_vm)) then 
+                                    smvm_pint(ee)%fint_intersect_invalid(ff2) = 1
+                                end if 
+                            end do 
+                        end if 
+                    end do 
                 end if 
-            end do 
-            do ii=1,vtx_clip_sm(ev2)%nintersect
-                if (vtx_clip_sm(ev2)%face_int_idx(ii) == ff) then 
-                    fint_exists = 1
-                    exit 
-                end if 
-            end do 
+            end if 
+        end do 
+        do ff=1,smvm_pint(ee)%nface 
+            if ((smvm_pint(ee)%fint_sm_loc(ff)(1:1) == 'e') .AND. (smvm_pint(ee)%fint_intersect_invalid(ff) == 0)) then !now search only edge intersects on the sm edge 
+                if ((smvm_pint(ee)%fint_vm_loc(ff) == 'e2') .OR. (smvm_pint(ee)%fint_vm_loc(ff) == 'v2') &
+                .OR. (smvm_pint(ee)%fint_vm_loc(ff) == 'v3')) then !If within tollerance of a volume mesh edge 
 
-            !Check if this edge itself already intersects this face 
-            do ii=1,edge_clip_sm(etgt)%nint
-                do aa=1,edge_clip_sm(etgt)%nfint(ii)
-                    if (edge_clip_sm(etgt)%vmface(ii,aa) == ff) then 
-                        fint_exists = 1
+                    !Volume mesh edge 
+                    etgt_vm = volume_mesh_full%faces(smvm_pint(ee)%faces(ff))%edges(smvm_pint(ee)%fint_vm_edge(ff))
+
+                    !Check if any other faces on E2f for this vm edge are in smvm_pint(ee)%faces(ff) for this surface mesh edge 
+                    do kk=1,4   
+
+                        !Adjacent face 
+                        fadj_vm = volume_mesh_full%E2F(etgt_vm,kk)
+
+                        !If this is a valid face and not the current face 
+                        if ((fadj_vm .GT. 0) .AND. (fadj_vm .NE. smvm_pint(ee)%faces(ff))) then 
+                            do ff2=1,smvm_pint(ee)%nface !If fadj_vm is within smvm_pint(ee)%faces(:) then tag the intersect on fadj_vm (position ff2) as invalid 
+                                if ((ff2 .NE. ff) .AND. (smvm_pint(ee)%faces(ff2) == fadj_vm)) then 
+                                    smvm_pint(ee)%fint_intersect_invalid(ff2) = 1
+                                end if 
+                            end do 
+                        end if 
+                    end do 
+                end if 
+            end if 
+        end do 
+    end if 
+end do 
+
+!Add intersections on surface mesh edge vertices 
+do ee=1,surface_mesh%nedge
+    if (smvm_pint(ee)%nface .GT. 0) then 
+
+        !Edge vertices 
+        ev1 = surface_mesh%edges(ee,1)
+        ev2 = surface_mesh%edges(ee,2)
+
+        !Adjacent surface faces to this edge 
+        f1 = surface_mesh%E2F(ee,1)
+        f2 = surface_mesh%E2F(ee,2)
+
+        !Approximate surface normal at this edge 
+        if ((f1 .GT. 0) .AND. (f2 .GT. 0)) then 
+            fadj = f1 
+        elseif (f1 .GT. 0) then
+            fadj = f1
+        elseif (f2 .GT. 0) then
+            fadj = f2
+        end if 
+
+        !Find the position of edge ee in fadj 
+        do aa=1,3
+            if (surface_mesh%F2E(fadj,aa) == ee) then 
+                if (aa == 1) then 
+                    edgeloc = 'e1'
+                elseif (aa == 2) then 
+                    edgeloc = 'e2'
+                elseif (aa == 3) then 
+                    edgeloc = 'e3'
+                end if 
+                exit
+            end if 
+        end do 
+
+        !Accumulate valid intersects onto the surface mesh edge and push to the volume mesh edges where required 
+        do ff=1,smvm_pint(ee)%nface 
+            if (smvm_pint(ee)%fint_intersect_invalid(ff) == 0) then !if valid intersection
+                if (smvm_pint(ee)%fint_sm_loc(ff)(1:1) == 'v') then !intersect lies on a vertex at the end of the edge (add to vtx_clip_sm)
+
+                    !Set this intersection to invalid so its not added again on the next edge loop 
+                    smvm_pint(ee)%fint_intersect_invalid(ff) = 1
+
+                    !Select vertex to add to 
+                    if (smvm_pint(ee)%fint_sm_loc(ff) == 'v1') then !on vertex 1
+                        vtgt = ev1
+                    elseif (smvm_pint(ee)%fint_sm_loc(ff) == 'v2') then !on vertex 2
+                        vtgt = ev2
+                    elseif (smvm_pint(ee)%fint_sm_loc(ff) == 'v3') then !on vertex 3
+                        vtgt = 0
+                        print *, '** edge-vertex selection error - picked vertex 3 on virtual face'
+                    end if 
+
+                    !Find this vertices position on fadj 
+                    do aa=1,3
+                        if (surface_mesh%connectivity(fadj,aa) == vtgt) then 
+                            if (aa == 1) then 
+                                vtx_loc = 'v1'
+                            elseif (aa == 2) then 
+                                vtx_loc = 'v2'
+                            elseif (aa == 3) then 
+                                vtx_loc = 'v3'
+                            end if 
+                            exit 
+                        end if 
+                    end do 
+
+                    !Check if this face is new on this vertex 
+                    exist = 0
+                    do ii=1,vtx_clip_sm(vtgt)%nintersect
+                        if (vtx_clip_sm(vtgt)%face_int_idx(ii) == smvm_pint(ee)%faces(ff)) then 
+                            exist = 1
+                            exit 
+                        end if 
+                    end do 
+
+                    !Add if new
+                    if (exist == 0) then 
+                        vtx_clip_sm(vtgt)%nintersect = vtx_clip_sm(vtgt)%nintersect + 1
+                        vtx_clip_sm(vtgt)%face_int_idx(vtx_clip_sm(vtgt)%nintersect) = smvm_pint(ee)%faces(ff) 
+                    end if 
+
+                    !Push to the volume mesh edge if required 
+                    if ((smvm_pint(ee)%fint_vm_loc(ff) == 'e2') .OR. (smvm_pint(ee)%fint_vm_loc(ff) == 'v2') &
+                    .OR. (smvm_pint(ee)%fint_vm_loc(ff) == 'v3')) then !If within tollerance of a volume mesh edge 
+
+                        !Target volume mesh edge 
+                        etgt_vm = volume_mesh_full%faces(smvm_pint(ee)%faces(ff))%edges(smvm_pint(ee)%fint_vm_edge(ff))
+
+                        !Validate 
+                        vm_intvalid = validate_vme_intersect(edge_clip_vm,surface_mesh,vtx_loc,fadj,etgt_vm)
+
+                        !Add if valid 
+                        if (vm_intvalid == 1) then 
+                            if (edge_clip_vm(etgt_vm)%nint+1 .GT. edge_clip_vm(etgt_vm)%nitem) then !append
+                                if (edge_clip_vm(etgt_vm)%nitem == 0) then 
+                                    call append_edge_clip_entry(edge_clip_vm,cm3dopt%NintEmax,etgt_vm) !allocate
+                                else
+                                    call append_edge_clip_entry(edge_clip_vm,edge_clip_vm(etgt_vm)%nitem*2,etgt_vm) !extend
+                                end if 
+                                if (edge_clip_vm(etgt_vm)%nitem .GT. cm3dopt%max_int_size) then 
+                                    cm3dopt%max_int_size = edge_clip_vm(etgt_vm)%nitem
+                                end if 
+                            end if
+
+                            !Set edge type 
+                            edge_clip_vm(etgt_vm)%type = 4 
+
+                            !Increment count 
+                            edge_clip_vm(etgt_vm)%nint = edge_clip_vm(etgt_vm)%nint + 1
+
+                            !Store 
+                            edge_clip_vm(etgt_vm)%intloc(edge_clip_vm(etgt_vm)%nint,:) = smvm_pint(ee)%fint_int_loc(ff,:)
+                            edge_clip_vm(etgt_vm)%surfseg(edge_clip_vm(etgt_vm)%nint) = fadj
+                            edge_clip_vm(etgt_vm)%int_tri_loc(edge_clip_vm(etgt_vm)%nint) = vtx_loc
+                            edge_clip_vm(etgt_vm)%vtx_idx(edge_clip_vm(etgt_vm)%nint) = vtgt
+                            edge_clip_vm(etgt_vm)%intfrac(edge_clip_vm(etgt_vm)%nint) = 0.0d0 
+
+                            !Push this intersection to all volume mesh faces on this volume mesh edge in the surface mesh structure
+                            do kk=1,4   
+
+                                !Adjacent face 
+                                fadj_vm = volume_mesh_full%E2F(etgt_vm,kk)
+
+                                !If non zero face 
+                                if (fadj_vm .GT. 0) then 
+
+                                    !Check if this exists on this surface mesh edge
+                                    exist = 0 
+                                    do nn=1,vtx_clip_sm(vtgt)%nintersect 
+                                        if (vtx_clip_sm(vtgt)%face_int_idx(nn) == fadj_vm) then 
+                                            exist = 1
+                                            exit 
+                                        end if 
+                                    end do 
+
+                                    !Add if new 
+                                    if (exist == 0) then 
+                                        vtx_clip_sm(vtgt)%nintersect = vtx_clip_sm(vtgt)%nintersect  + 1
+                                        vtx_clip_sm(vtgt)%face_int_idx(vtx_clip_sm(vtgt)%nintersect) = fadj_vm
+                                    end if 
+                                end if 
+                            end do 
+                        end if 
+                    end if 
+                end if 
+            end if 
+        end do 
+    end if 
+end do 
+
+!Add intersections internal to surface mesh edges
+do ee=1,surface_mesh%nedge
+    if (smvm_pint(ee)%nface .GT. 0) then 
+
+        !Edge vertices 
+        ev1 = surface_mesh%edges(ee,1)
+        ev2 = surface_mesh%edges(ee,2)
+
+        !Adjacent surface faces to this edge 
+        f1 = surface_mesh%E2F(ee,1)
+        f2 = surface_mesh%E2F(ee,2)
+
+        !Approximate surface normal at this edge 
+        if ((f1 .GT. 0) .AND. (f2 .GT. 0)) then 
+            fadj = f1 
+        elseif (f1 .GT. 0) then
+            fadj = f1
+        elseif (f2 .GT. 0) then
+            fadj = f2
+        end if 
+
+        !Find the position of edge ee in fadj 
+        do aa=1,3
+            if (surface_mesh%F2E(fadj,aa) == ee) then 
+                if (aa == 1) then 
+                    edgeloc = 'e1'
+                elseif (aa == 2) then 
+                    edgeloc = 'e2'
+                elseif (aa == 3) then 
+                    edgeloc = 'e3'
+                end if 
+                exit
+            end if 
+        end do 
+
+        !Set invalid any intersections within the edge with faces where there is already an intersection at a vertex of this edge with this face
+        !and this intersect will not be snapped to a volume mesh face edge
+        do ff=1,smvm_pint(ee)%nface 
+            if ((smvm_pint(ee)%fint_sm_loc(ff)(1:1) == 'e') .AND. (smvm_pint(ee)%fint_intersect_invalid(ff) == 0) &
+            .AND. (smvm_pint(ee)%fint_vm_loc(ff) == 'in')) then
+
+                !Target volume mesh face
+                ftgt = smvm_pint(ee)%faces(ff)
+
+                !Check vertex intersection structures on each end of this edge 
+                exist = 0 
+                do nn=1,vtx_clip_sm(ev1)%nintersect 
+                    if (vtx_clip_sm(ev1)%face_int_idx(nn) == ftgt) then 
+                        exist = 1
                         exit 
                     end if 
                 end do 
-                if (fint_exists == 1) then 
+                do nn=1,vtx_clip_sm(ev2)%nintersect 
+                    if (vtx_clip_sm(ev2)%face_int_idx(nn) == ftgt) then 
+                        exist = 1
+                        exit 
+                    end if 
+                end do 
+
+                !Set invalid if there is an intersection with this face at either end of the edge 
+                if (exist == 1) then 
+                    smvm_pint(ee)%fint_intersect_invalid(ff) = 1
+                end if 
+            end if 
+        end do 
+
+        !Accumulate valid intersects onto the surface mesh edge and push to the volume mesh edges where required 
+        do ff=1,smvm_pint(ee)%nface 
+            if (smvm_pint(ee)%fint_intersect_invalid(ff) == 0) then !if valid intersection
+                if (smvm_pint(ee)%fint_sm_loc(ff)(1:1) == 'e') then !intersect lies on the edge (add to edge_clip_sm)
+
+                    !Set this intersection to invalid so its not added again on the next edge loop 
+                    smvm_pint(ee)%fint_intersect_invalid(ff) = 1
+
+                    !Add this intersection to the edge structure 
+                    if (edge_clip_sm(ee)%nint+1 .GT. edge_clip_sm(ee)%nitem) then !append
+                        call append_edge_clip_entry(edge_clip_sm,edge_clip_sm(ee)%nitem*2,ee)
+                        if (edge_clip_sm(ee)%nitem .GT. cm3dopt%max_int_size) then 
+                            cm3dopt%max_int_size = edge_clip_sm(ee)%nitem
+                        end if 
+                    end if
+                    edge_clip_sm(ee)%type = 4
+                    edge_clip_sm(ee)%nint = edge_clip_sm(ee)%nint + 1
+                    edge_clip_sm(ee)%intloc(edge_clip_sm(ee)%nint,:) = smvm_pint(ee)%fint_int_loc(ff,:)
+                    vtx_idx_smesh = vtx_idx_smesh + 1
+                    edge_clip_sm(ee)%vtx_idx(edge_clip_sm(ee)%nint) = vtx_idx_smesh
+                    edge_clip_sm(ee)%nfint(edge_clip_sm(ee)%nint) = &
+                    edge_clip_sm(ee)%nfint(edge_clip_sm(ee)%nint) + 1 
+                    edge_clip_sm(ee)%vmface(edge_clip_sm(ee)%nint,&
+                    edge_clip_sm(ee)%nfint(edge_clip_sm(ee)%nint)) = smvm_pint(ee)%faces(ff) 
+        
+                    !Push to the volume mesh edge if required 
+                    if ((smvm_pint(ee)%fint_vm_loc(ff) == 'e2') .OR. (smvm_pint(ee)%fint_vm_loc(ff) == 'v2') &
+                    .OR. (smvm_pint(ee)%fint_vm_loc(ff) == 'v3')) then !If within tollerance of a volume mesh edge 
+
+                        !Target volume mesh edge 
+                        etgt_vm = volume_mesh_full%faces(smvm_pint(ee)%faces(ff))%edges(smvm_pint(ee)%fint_vm_edge(ff))
+
+                        !Validate 
+                        vm_intvalid = validate_vme_intersect(edge_clip_vm,surface_mesh,edgeloc,fadj,etgt_vm)
+
+                        !Add if valid 
+                        if (vm_intvalid == 1) then 
+                            if (edge_clip_vm(etgt_vm)%nint+1 .GT. edge_clip_vm(etgt_vm)%nitem) then !append
+                                if (edge_clip_vm(etgt_vm)%nitem == 0) then 
+                                    call append_edge_clip_entry(edge_clip_vm,cm3dopt%NintEmax,etgt_vm) !allocate
+                                else
+                                    call append_edge_clip_entry(edge_clip_vm,edge_clip_vm(etgt_vm)%nitem*2,etgt_vm) !extend
+                                end if 
+                                if (edge_clip_vm(etgt_vm)%nitem .GT. cm3dopt%max_int_size) then 
+                                    cm3dopt%max_int_size = edge_clip_vm(etgt_vm)%nitem
+                                end if 
+                            end if
+
+                            !Set edge type 
+                            edge_clip_vm(etgt_vm)%type = 4 
+
+                            !Increment count 
+                            edge_clip_vm(etgt_vm)%nint = edge_clip_vm(etgt_vm)%nint + 1
+
+                            !Store 
+                            edge_clip_vm(etgt_vm)%intloc(edge_clip_vm(etgt_vm)%nint,:) = smvm_pint(ee)%fint_int_loc(ff,:)
+                            edge_clip_vm(etgt_vm)%surfseg(edge_clip_vm(etgt_vm)%nint) = fadj 
+                            edge_clip_vm(etgt_vm)%int_tri_loc(edge_clip_vm(etgt_vm)%nint) = edgeloc 
+                            edge_clip_vm(etgt_vm)%vtx_idx(edge_clip_vm(etgt_vm)%nint) = vtx_idx_smesh
+                            edge_clip_vm(etgt_vm)%intfrac(edge_clip_vm(etgt_vm)%nint) = 0.0d0 
+
+                            !Push this intersection to all volume mesh faces on this volume mesh edge in the surface mesh structure
+                            do kk=1,4   
+
+                                !Adjacent face 
+                                fadj_vm = volume_mesh_full%E2F(etgt_vm,kk)
+
+                                !If non zero face 
+                                if (fadj_vm .GT. 0) then 
+
+                                    !Check if this exists on this surface mesh edge
+                                    exist = 0 
+                                    do nn=1,edge_clip_sm(ee)%nfint(edge_clip_sm(ee)%nint)
+                                        if (edge_clip_sm(ee)%vmface(edge_clip_sm(ee)%nint,nn) == fadj_vm) then 
+                                            exist = 1
+                                            exit 
+                                        end if 
+                                    end do 
+
+                                    !Add if new 
+                                    if (exist == 0) then 
+                                        edge_clip_sm(ee)%nfint(edge_clip_sm(ee)%nint) = &
+                                        edge_clip_sm(ee)%nfint(edge_clip_sm(ee)%nint) + 1
+                                        edge_clip_sm(ee)%vmface(edge_clip_sm(ee)%nint,&
+                                        edge_clip_sm(ee)%nfint(edge_clip_sm(ee)%nint)) = fadj_vm 
+                                    end if 
+                                end if 
+                            end do 
+                        end if 
+                    end if 
+                end if 
+            end if 
+        end do 
+    end if 
+end do 
+
+!Debug check for valid unused edge intersections ====
+! do ee=1,surface_mesh%nedge
+!     if (smvm_pint(ee)%nface .GT. 0) then 
+!         exist = 0 
+!         do ff=1,smvm_pint(ee)%nface
+!             if (smvm_pint(ee)%fint_intersect_invalid(ff) == 0) then 
+!                 exist = 1
+!             end if 
+!         end do 
+!         if (exist == 1) then 
+!             print *, '=== eint missed -> edg = ',ee
+!             do ff=1,smvm_pint(ee)%nface
+!                 if (smvm_pint(ee)%fint_intersect_invalid(ff) == 0) then 
+!                     print *, smvm_pint(ee)%faces(ff),smvm_pint(etgt)%fint_sm_loc(ff)
+!                 end if 
+!             end do 
+!         end if 
+!     end if 
+! end do 
+
+!Debug write intersections on volume mesh ====
+! open(11,file='io/vmedge_seint.dat')
+! do ee=1,volume_mesh_full%nedge
+!     if (edge_clip_vm(ee)%nint .GE. 1) then 
+!         do ii=1,edge_clip_vm(ee)%nint
+!             write(11,*) edge_clip_vm(ee)%intloc(ii,:)
+!         end do 
+!     end if 
+! end do 
+! close(11)
+return 
+end subroutine clip_surfedges2volfaces
+
+
+
+
+!Function to validate volume mesh edge intersection ===========================
+function validate_vme_intersect(edge_clip_vm,surface_mesh,int_location_on_tri,tritgt,vmedge) result(intvalid)
+implicit none 
+
+!Variables - Import
+integer(in) :: vmedge,tritgt,intvalid
+character(len=2) :: int_location_on_tri
+type(surface_data) :: surface_mesh
+type(edgeint), dimension(:), allocatable :: edge_clip_vm
+
+!Variables - Local 
+integer(in) :: nn,aa
+integer(in) :: etgt,vtgt1,vtgt2,fadj,eadj,vadj,f_connected
+character(len=2) :: int_location_on_tri_adj
+
+!If no intersection so far then set this intersection to valid and return 
+if (edge_clip_vm(vmedge)%nint == 0) then 
+    intvalid = 1
+    return 
+end if 
+
+!Initialise 
+intvalid = 1
+
+!Test 
+if (int_location_on_tri .NE. 'in') then !if on the triangle boundary 
+    if (int_location_on_tri(1:1) == 'e') then !on triangle edge -> check face across edge and those on both vertices at the edge ends 
+
+        !Target edge and vertices of the new intersect 
+        if (int_location_on_tri(2:2) == '1') then 
+            etgt = 1 
+            vtgt1 = 1
+            vtgt2 = 2
+        elseif (int_location_on_tri(2:2) == '2') then 
+            etgt = 2 
+            vtgt1 = 2
+            vtgt2 = 3
+        elseif (int_location_on_tri(2:2) == '3') then 
+            etgt = 3 
+            vtgt1 = 3
+            vtgt2 = 1
+        end if 
+        etgt = surface_mesh%F2E(tritgt,etgt)
+        vtgt1 = surface_mesh%connectivity(tritgt,vtgt1)
+        vtgt2 = surface_mesh%connectivity(tritgt,vtgt2)
+
+        !Invalidate if there are intersections on adjacent faces co-incident with this one 
+        do nn=1,edge_clip_vm(vmedge)%nint
+
+            !Adjacent face 
+            fadj = edge_clip_vm(vmedge)%surfseg(nn)
+
+            !Test if this face contains one of etgt/vtgt1/vtgt2
+            f_connected = 0 
+            do aa=1,3
+                if ((surface_mesh%connectivity(fadj,aa) == vtgt1) .OR. &
+                (surface_mesh%connectivity(fadj,aa) == vtgt2)) then 
+                    f_connected = 1
                     exit 
                 end if 
-            end do 
+                if (surface_mesh%F2E(fadj,aa) == etgt) then 
+                    f_connected = 1
+                    exit 
+                end if 
+            end do  
 
-            !If there is already an intersection then skip this edge 
-            if (fint_exists == 1) then 
-                !print *, 'int exists',etgt
-                cycle 
-            end if
+            !If this face is connected check the intersection location of the other intersection and remove if its tagged as the same
+            !(either if its on the same edge or on a vertex at the end of the edge as the two must be co-incident)
+            if (f_connected == 1) then 
+                int_location_on_tri_adj = edge_clip_vm(vmedge)%int_tri_loc(nn)
+                if (int_location_on_tri_adj(1:1) == 'e') then !on edge
+                    if (int_location_on_tri_adj(2:2) == '1') then 
+                        eadj = 1 
+                    elseif (int_location_on_tri_adj(2:2) == '2') then 
+                        eadj = 2 
+                    elseif (int_location_on_tri_adj(2:2) == '3') then 
+                        eadj = 3 
+                    end if
+                    eadj = surface_mesh%F2E(fadj,eadj)
+                    if (eadj == etgt) then !on the same edge so remove 
+                        intvalid = 0 
+                        return 
+                    end if 
+                elseif (int_location_on_tri_adj(1:1) == 'v') then !on vertex
+                    if (int_location_on_tri_adj(2:2) == '1') then 
+                        vadj = 1
+                    elseif (int_location_on_tri_adj(2:2) == '2') then 
+                        vadj = 2
+                    elseif (int_location_on_tri_adj(2:2) == '3') then 
+                        vadj = 3
+                    end if
+                    vadj = surface_mesh%connectivity(fadj,vadj)
+                    if ((vadj == vtgt1) .OR. (vadj == vtgt2)) then !on a vertex on this edge in the other triangle so remove 
+                        intvalid = 0 
+                        return 
+                    end if 
+                end if 
+            end if 
+        end do 
+    elseif (int_location_on_tri(1:1) == 'v') then !on triangle vertex -> check triangles on this vertex 
 
-            !Search for intersect with this volume mesh face
-            intfound = 0 
-            do aa=2,volume_mesh_full%faces(ff)%nvtx-1
+        !Target vertex
+        if (int_location_on_tri(2:2) == '1') then 
+            vtgt1 = 1
+        elseif (int_location_on_tri(2:2) == '2') then 
+            vtgt1 = 2
+        elseif (int_location_on_tri(2:2) == '3') then 
+            vtgt1 = 3
+        end if
+        vtgt1 = surface_mesh%connectivity(tritgt,vtgt1)
 
-                !Triangle on this face 
-                vft2 = aa 
-                vft3 = aa + 1
-                vft2 = volume_mesh_full%faces(ff)%vertices(vft2)
-                vft3 = volume_mesh_full%faces(ff)%vertices(vft3)
+        !Invalidate intersections on adjacent faces that are co-incident with this one 
+        do nn=1,edge_clip_vm(vmedge)%nint
 
-                !Vertices 
-                vt2(:) = volume_mesh_full%vtx(vft2,:)
-                vt3(:) = volume_mesh_full%vtx(vft3,:)
+            !Adjacent face 
+            fadj = edge_clip_vm(vmedge)%surfseg(nn)
 
-                !Test intersection 
+            !Test if this face contains vtgt1
+            f_connected = 0 
+            do aa=1,3
+                if (surface_mesh%connectivity(fadj,aa) == vtgt1) then 
+                    f_connected = 1
+                    exit 
+                end if 
+            end do  
+
+            !If this face is connected check the intersection location of the other intersection and remove if its tagged as the same
+            !(if its on the same vertex)
+            if (f_connected == 1) then 
+                int_location_on_tri_adj = edge_clip_vm(vmedge)%int_tri_loc(nn)
+                if (int_location_on_tri_adj(2:2) == '1') then 
+                    vadj = 1
+                elseif (int_location_on_tri_adj(2:2) == '2') then 
+                    vadj = 2
+                elseif (int_location_on_tri_adj(2:2) == '3') then 
+                    vadj = 3
+                end if
+                vadj = surface_mesh%connectivity(fadj,vadj)
+                if (vadj == vtgt1) then !on the same vertex so remove 
+                    intvalid = 0 
+                    return  
+                end if 
+            end if 
+        end do 
+    end if 
+end if 
+return 
+end function validate_vme_intersect
+
+
+
+
+!Clip volume mesh edges to surface subroutine ===========================
+subroutine clip_voledges2surffaces(edge_clip_vm,edge_clip_sm,vtx_clip_sm,tri_clip_sm,volume_mesh_full,surface_adtree,surface_mesh,&
+                                   cm3dopt,vtx_idx_smesh)
+implicit none 
+
+!Variables - Import
+integer(in) :: vtx_idx_smesh
+type(vol_mesh_data) :: volume_mesh_full
+type(edgeint), dimension(:), allocatable :: edge_clip_sm,edge_clip_vm
+type(vtx_intersect), dimension(:) :: vtx_clip_sm
+type(triint), dimension(:), allocatable :: tri_clip_sm
+type(cm3d_options) :: cm3dopt
+type(surface_data) :: surface_mesh
+type(tree_data) :: surface_adtree
+
+!Variables - Local 
+integer(in) :: ii,jj,ee,nn,kk,aa,vv
+integer(in) :: ftgt,etgt,ev1,ev2,nselected,vadj,eadj,fadj_vm,fadj_sm,vtgt
+integer(in) :: int_type,Neintersect,sint_idx,vmint_on_this_tri_exist
+integer(in) :: smt_nint_on_vmface(4),node_select(surface_adtree%nnode)
+real(dp) :: cpadSZ,zxmin,zxmax,zymin,zymax,zzmin,zzmax,segnorm,zitol,zitol_bc
+real(dp) :: ve1(3),ve2(3),segdir(3),vt1(3),vt2(3),vt3(3),vint(3),vint_bc_sm(3)
+character(len=2) :: vtxi_loc_smf
+
+!Set comparison tollerance
+zitol = cm3dopt%intcointol !Set as intersection tollerance
+zitol_bc = cm3dopt%baryloctol !Set as barycentric tollerance 
+
+!Initialise selected nodes 
+nselected = 0 
+node_select(:) = 0 
+
+!Find intersections and classify edges
+sint_idx = 0 
+Neintersect = 0 
+do ee=1,volume_mesh_full%nedge
+
+    !Edge vertices 
+    ev1 = volume_mesh_full%edges(ee,1)
+    ev2 = volume_mesh_full%edges(ee,2)
+
+    !Edge end vertices
+    ve1(:) = volume_mesh_full%vtx(ev1,:)
+    ve2(:) = volume_mesh_full%vtx(ev2,:)
+
+    !Edge length and direction 
+    segdir(:) = ve2(:) - ve1(:)
+    segnorm = norm2(segdir(:))
+
+    !Padding size 
+    cpadSZ = segnorm*0.005d0 !10.0d0*zitol
+
+    !Intersection bounding box
+    zxmin = min(ve1(1),ve2(1)) - cpadSZ !tgt bounding box -> xmin
+    zxmax = max(ve1(1),ve2(1)) + cpadSZ !tgt bounding box -> xmax
+    zymin = min(ve1(2),ve2(2)) - cpadSZ !tgt bounding box -> ymin
+    zymax = max(ve1(2),ve2(2)) + cpadSZ !tgt bounding box -> ymax
+    zzmin = min(ve1(3),ve2(3)) - cpadSZ !tgt bounding box -> zmin
+    zzmax = max(ve1(3),ve2(3)) + cpadSZ !tgt bounding box -> zmax
+
+    !Identify any triangle bounding boxes that may overlap the edge 
+    call search_ADtree(nselected,node_select,surface_adtree,zxmin,zxmax,zymin,zymax,zzmin,zzmax)
+
+    !Clip if there are any potential surface overlaps 
+    if (nselected .NE. 0) then 
+
+        !Search all targeted faces 
+        do nn=1,nselected
+            do kk=1,surface_adtree%tree(node_select(nn))%nentry
+
+                !Target face 
+                ftgt = surface_adtree%tree(node_select(nn))%entry(kk)
+
+                !Verticies of this surface mesh face
+                vt1(:) = surface_mesh%vertices(surface_mesh%connectivity(ftgt,1),:)
+                vt2(:) = surface_mesh%vertices(surface_mesh%connectivity(ftgt,2),:)
+                vt3(:) = surface_mesh%vertices(surface_mesh%connectivity(ftgt,3),:)
+
+                !Test intersection
                 int_type = line_tri_intersect_bool(ve1,ve2,vt1,vt2,vt3)
                 if (int_type == 1) then 
 
-                    !Find intersection location (is within edge and triangle here)
-                    vint = line_tri_intersect(ve1,ve2,vt1,vt2,vt3)
                     
-                    !Find barycentric location in adjacent surface mesh faces 
-                    if (f1 .GT. 0) then 
-                        vt1_s(:) = surface_mesh%vertices(surface_mesh%connectivity(f1,1),:)
-                        vt2_s(:) = surface_mesh%vertices(surface_mesh%connectivity(f1,2),:)
-                        vt3_s(:) = surface_mesh%vertices(surface_mesh%connectivity(f1,3),:)
-                        vbc = get_barycentric_coordinates(vint,vt1_s,vt2_s,vt3_s)
-                        vtxi_loc_fadj = vtx_bary_tri_loc(vbc(1),vbc(2),vbc(3),zitol_bc)
-                        if (vtxi_loc_fadj(1:1) == 'v') then !if on vertex then select the vertex
-                            if (vtxi_loc_fadj == 'v1') then !on vertex 1
-                                vtgt = surface_mesh%connectivity(f1,1)
-                            elseif (vtxi_loc_fadj == 'v2') then !on vertex 2
-                                vtgt = surface_mesh%connectivity(f1,2)
-                            elseif (vtxi_loc_fadj == 'v3') then !on vertex 3
-                                vtgt = surface_mesh%connectivity(f1,3)
+
+                    !Count intersections of this surface face with each volume face on this volume mesh edge
+                    smt_nint_on_vmface(:) = 0 
+                    do aa=1,4
+
+                        !Vm face
+                        fadj_vm = volume_mesh_full%E2F(ee,aa)
+
+                        !Search surface mesh triangle vertices 
+                        do vv=1,3
+                            vtgt = surface_mesh%connectivity(ftgt,vv)
+                            do ii=1,vtx_clip_sm(vtgt)%nintersect
+                                if (vtx_clip_sm(vtgt)%face_int_idx(ii) == fadj_vm) then 
+                                    smt_nint_on_vmface(aa) = smt_nint_on_vmface(aa) + 1
+                                    exit 
+                                end if 
+                            end do
+                        end do 
+
+                        !Serch surface mesh triangle edges 
+                        do vv=1,3
+                            etgt = surface_mesh%F2E(ftgt,vv)
+                            do ii=1,edge_clip_sm(etgt)%nint
+                                do jj=1,edge_clip_sm(etgt)%nfint(ii)
+                                    if (edge_clip_sm(etgt)%vmface(ii,jj) ==  fadj_vm) then 
+                                        smt_nint_on_vmface(aa) = smt_nint_on_vmface(aa) + 1
+                                        exit 
+                                    end if 
+                                end do 
+                            end do 
+                        end do 
+
+                        !Search surface mesh triangle internal? -> none will exist yet for this edge so not required
+                    end do 
+
+                    !Identify if any volume mesh edge intersections exist on this triangles edges and vertices 
+                    vmint_on_this_tri_exist = 0 
+                    do ii=1,edge_clip_vm(ee)%nint
+                        fadj_sm = edge_clip_vm(ee)%surfseg(ii)
+                        if (edge_clip_vm(ee)%int_tri_loc(ii)(1:1) == 'e') then 
+                            if (edge_clip_vm(ee)%int_tri_loc(ii)(2:2) == '1') then 
+                                eadj = 1 
+                            elseif (edge_clip_vm(ee)%int_tri_loc(ii)(2:2) == '2') then 
+                                eadj = 2 
+                            elseif (edge_clip_vm(ee)%int_tri_loc(ii)(2:2) == '3') then 
+                                eadj = 3 
+                            end if
+                            eadj = surface_mesh%F2E(fadj_sm,eadj)
+                            if ((eadj == surface_mesh%F2E(ftgt,1)) .OR. &
+                            (eadj == surface_mesh%F2E(ftgt,2)) .OR. &
+                            (eadj == surface_mesh%F2E(ftgt,3))) then 
+                                vmint_on_this_tri_exist = 1
+                                exit 
+                            end if 
+                        elseif (edge_clip_vm(ee)%int_tri_loc(ii)(1:1) == 'v') then 
+                            if (edge_clip_vm(ee)%int_tri_loc(ii)(2:2) == '1') then 
+                                vadj = 1
+                            elseif (edge_clip_vm(ee)%int_tri_loc(ii)(2:2) == '2') then 
+                                vadj = 2
+                            elseif (edge_clip_vm(ee)%int_tri_loc(ii)(2:2) == '3') then 
+                                vadj = 3
+                            end if
+                            vadj = surface_mesh%connectivity(fadj_sm,vadj)
+                            if ((vadj == surface_mesh%connectivity(ftgt,1)) .OR. &
+                            (vadj == surface_mesh%connectivity(ftgt,2)) .OR. &
+                            (vadj == surface_mesh%connectivity(ftgt,3))) then 
+                                vmint_on_this_tri_exist = 1
+                                exit 
                             end if 
                         end if 
-                    else
-                        vt1_s(:) = surface_mesh%vertices(surface_mesh%connectivity(f2,1),:)
-                        vt2_s(:) = surface_mesh%vertices(surface_mesh%connectivity(f2,2),:)
-                        vt3_s(:) = surface_mesh%vertices(surface_mesh%connectivity(f2,3),:)
-                        vbc = get_barycentric_coordinates(vint,vt1_s,vt2_s,vt3_s)
-                        vtxi_loc_fadj = vtx_bary_tri_loc(vbc(1),vbc(2),vbc(3),zitol_bc)
-                        if (vtxi_loc_fadj(1:1) == 'v') then !if on vertex then select the vertex
-                            if (vtxi_loc_fadj == 'v1') then !on vertex 1
-                                vtgt = surface_mesh%connectivity(f2,1)
-                            elseif (vtxi_loc_fadj == 'v2') then !on vertex 2
-                                vtgt = surface_mesh%connectivity(f2,2)
-                            elseif (vtxi_loc_fadj == 'v3') then !on vertex 3
-                                vtgt = surface_mesh%connectivity(f2,3)
+                    end do 
+
+                    !If there is requirement for an internal intersection then construct one 
+                    !(if there is at most one intersection with vm faces on this vm edge on this triangle and there is no intersection on this vm edge with any edge or vertex of this triangle)
+                    if ((maxval(smt_nint_on_vmface) .LE. 1) .AND. (vmint_on_this_tri_exist == 0)) then 
+
+                        !Find intersection location 
+                        vint = line_tri_intersect(ve1,ve2,vt1,vt2,vt3)
+                        vint_bc_sm = baryc_line_tri_intersect(ve1,ve2,vt1,vt2,vt3)
+
+                        !Classify the location on the surface mesh face 
+                        vtxi_loc_smf = vtx_bary_tri_loc(vint_bc_sm(1),vint_bc_sm(2),vint_bc_sm(3),zitol_bc)
+                        
+                        !Add to volume mesh edge ------
+                        !Append or allocate edge clip entry if required 
+                        if (edge_clip_vm(ee)%nint+1 .GT. edge_clip_vm(ee)%nitem) then !append
+                            if (edge_clip_vm(ee)%nitem == 0) then 
+                                call append_edge_clip_entry(edge_clip_vm,cm3dopt%NintEmax,ee) !allocate
+                            else
+                                call append_edge_clip_entry(edge_clip_vm,edge_clip_vm(ee)%nitem*2,ee) !extend
                             end if 
-                        end if 
-                    end if 
-                    !print *, vtxi_loc_fadj
-
-                    !Force to this edge if intersection is determined within or outside the triangle 
-                    !(as intersecting ray is the edge the the intersection must lie along this edge)
-                    if (vtxi_loc_fadj == 'in') then 
-                        vtxi_loc_fadj = 'ef'
-                        print *, 'in force'
-                    end if 
-                    if (vtxi_loc_fadj == 'ot') then 
-                        vtxi_loc_fadj = 'ef'
-                        print *, 'out force'
-                    end if 
-                    !Maybe force to the closest vertex on this edge to be on the safe side???
-
-                    !If this edge intersects and the intersect lies at an edge then store and cycle 
-                    if (vtxi_loc_fadj(1:1) == 'e') then !intersect lies on the edge (add to edge_clip_sm)
-                        if (edge_clip_sm(etgt)%nint+1 .GT. edge_clip_sm(etgt)%nitem) then !append
-                            call append_edge_clip_entry(edge_clip_sm,edge_clip_sm(etgt)%nitem*2,etgt)
-                            if (edge_clip_sm(etgt)%nitem .GT. cm3dopt%max_int_size) then 
-                                cm3dopt%max_int_size = edge_clip_sm(etgt)%nitem
+                            if (edge_clip_vm(ee)%nitem .GT. cm3dopt%max_int_size) then 
+                                cm3dopt%max_int_size = edge_clip_vm(ee)%nitem
                             end if 
                         end if
-                        edge_clip_sm(etgt)%type = 4
-                        edge_clip_sm(etgt)%nint = edge_clip_sm(etgt)%nint + 1
-                        edge_clip_sm(etgt)%intloc(edge_clip_sm(etgt)%nint,:) = vint(:)
+
+                        !Set vm edge type 
+                        edge_clip_vm(ee)%type = 4 
+
+                        !Increment count 
+                        edge_clip_vm(ee)%nint = edge_clip_vm(ee)%nint + 1
+
+                        !Store 
+                        edge_clip_vm(ee)%intloc(edge_clip_vm(ee)%nint,:) = vint(:)
+                        edge_clip_vm(ee)%surfseg(edge_clip_vm(ee)%nint) = ftgt
+                        edge_clip_vm(ee)%int_tri_loc(edge_clip_vm(ee)%nint) = 'in' !vtxi_loc_smf
+                        edge_clip_vm(ee)%intfrac(edge_clip_vm(ee)%nint) = 0.0d0 
                         vtx_idx_smesh = vtx_idx_smesh + 1
-                        edge_clip_sm(etgt)%vtx_idx(edge_clip_sm(etgt)%nint) = vtx_idx_smesh
-                        edge_clip_sm(etgt)%nfint(edge_clip_sm(etgt)%nint) = &
-                        edge_clip_sm(etgt)%nfint(edge_clip_sm(etgt)%nint) + 1 
-                        edge_clip_sm(etgt)%vmface(edge_clip_sm(etgt)%nint,&
-                        edge_clip_sm(etgt)%nfint(edge_clip_sm(etgt)%nint)) = ff 
-                        intfound = 1
+                        edge_clip_vm(ee)%vtx_idx(edge_clip_vm(ee)%nint) = vtx_idx_smesh
+                        !Add to volume mesh edge ------
+
+                        !Add to surface mesh triangle ------
+                        !Append tri clip entry if required 
+                        if (tri_clip_sm(ftgt)%nvtx+1 .GT. tri_clip_sm(ftgt)%nitem) then !append
+                            call append_tri_clip_entry(tri_clip_sm,tri_clip_sm(ftgt)%nitem*2,ftgt)
+                            if (tri_clip_sm(ftgt)%nitem .GT. cm3dopt%max_int_size) then 
+                                cm3dopt%max_int_size = tri_clip_sm(ftgt)%nitem
+                            end if 
+                        end if
+                        
+                        !Store 
+                        tri_clip_sm(ftgt)%nvtx = tri_clip_sm(ftgt)%nvtx + 1
+                        tri_clip_sm(ftgt)%vtx_idx(tri_clip_sm(ftgt)%nvtx) = edge_clip_vm(ee)%vtx_idx(edge_clip_vm(ee)%nint)
+                        tri_clip_sm(ftgt)%edge_int_idx(tri_clip_sm(ftgt)%nvtx) = ee 
+                        tri_clip_sm(ftgt)%intloc(tri_clip_sm(ftgt)%nvtx,:) = edge_clip_vm(ee)%intloc(ii,:)
+
+                        !Add all faces on this volume mesh edge to the intersect
+                        do aa=1,4
+                            fadj_vm = volume_mesh_full%E2F(ee,aa)
+                            if (fadj_vm .GT. 0) then 
+                                tri_clip_sm(ftgt)%nfint(tri_clip_sm(ftgt)%nvtx) = &
+                                tri_clip_sm(ftgt)%nfint(tri_clip_sm(ftgt)%nvtx) + 1
+                                tri_clip_sm(ftgt)%face_int_idx(tri_clip_sm(ftgt)%nvtx,&
+                                tri_clip_sm(ftgt)%nfint(tri_clip_sm(ftgt)%nvtx)) = fadj_vm
+                            end if 
+                        end do 
+                        !Add to surface mesh triangle ------
                     end if 
-                end if
-                if (intfound == 1) then 
-                    exit 
                 end if 
             end do 
         end do 
     end if 
 end do 
+
+!Debug write all vm-surface intersections ------- 
+! open(11,file='io/vm_surf_intersect_in.dat')
+! open(12,file='io/vm_surf_intersect_out.dat')
+! do ee=1,volume_mesh_full%nedge
+!     if (edge_clip(ee)%type == 4) then 
+!         ! print *, 'et4'
+!         do aa=1,edge_clip(ee)%nint
+!             if (edge_clip(ee)%int_inout(aa)(1:1) == 'i') then 
+!                 write(11,*) edge_clip(ee)%intloc(aa,:)
+!             elseif (edge_clip(ee)%int_inout(aa)(1:1) == 'o') then 
+!                 write(12,*) edge_clip(ee)%intloc(aa,:)
+!             end if 
+!         end do 
+!     end if
+! end do 
+! close(11)
+! close(12)
 return 
-end subroutine clip_surfedges2volfaces
+end subroutine clip_voledges2surffaces
 
 
 
@@ -2729,7 +3661,7 @@ integer(in) :: ii,ee,kk
 integer(in) :: ev1,ev2,intselect
 integer(in) :: int_selected(cm3dopt%max_int_size)
 integer(in) :: vtx_idx_temp(cm3dopt%max_int_size),vmface_temp(cm3dopt%max_int_size,8),nfint_temp(cm3dopt%max_int_size)
-real(dp) :: ve1(3),ve2(3),edir(3)
+real(dp) :: ve1(3),ve2(3)
 real(dp) :: intdist(cm3dopt%max_int_size)
 real(dp) :: intloc_temp(cm3dopt%max_int_size,3)
 
@@ -2750,9 +3682,6 @@ do ee=1,surface_mesh%nedge
         !Edge end vertices 
         ve1(:) = surface_mesh%vertices(ev1,:)
         ve2(:) = surface_mesh%vertices(ev2,:)
-
-        !Edge direction 
-        edir(:) = ve2(:) - ve1(:)
 
         !If more than one intersection then order intersections 
         if (edge_clip_sm(ee)%nint .GT. 1) then
@@ -2816,18 +3745,31 @@ end subroutine build_surf_intersect_edge_mesh
 
 
 !Subroutine to build volume mesh intersecting edge mesh ===========================
-subroutine build_vol_intersect_edge_mesh(edge_clip_vm,volume_mesh_full)
+subroutine build_vol_intersect_edge_mesh(edge_clip_vm,volume_mesh_full,cm3dopt)
 implicit none 
 
 !Variables - Import
 type(edgeint), dimension(:) :: edge_clip_vm
 type(vol_mesh_data) :: volume_mesh_full
+type(cm3d_options) :: cm3dopt
 
 !Variables - Local 
-integer(in) :: ee,kk
-integer(in) :: ev1,ev2
+integer(in) :: ii,ee,kk
+integer(in) :: ev1,ev2,intselect
+integer(in) :: int_selected(cm3dopt%max_int_size)
+integer(in) :: vtx_idx_temp(cm3dopt%max_int_size)
+integer(in) :: surfseg_temp(cm3dopt%max_int_size)
+real(dp) :: ve1(3),ve2(3)
+real(dp) :: intdist(cm3dopt%max_int_size)
+real(dp) :: intloc_temp(cm3dopt%max_int_size,3)
+character(len=2) :: int_tri_loc_temp(cm3dopt%max_int_size)
 
-!Build edge mesh 
+!Order intersections and build edge mesh where neccesary
+intdist(:) = 0.0d0 
+int_selected(:) = 0
+surfseg_temp(:) = 0 
+vtx_idx_temp(:) = 0 
+intloc_temp(:,:) = 0.0d0 
 do ee=1,volume_mesh_full%nedge
     if (edge_clip_vm(ee)%nint .NE. 0) then !if any intersections 
 
@@ -2835,11 +3777,50 @@ do ee=1,volume_mesh_full%nedge
         ev1 = volume_mesh_full%edges(ee,1)
         ev2 = volume_mesh_full%edges(ee,2)
 
+        !Edge end vertices 
+        ve1(:) = volume_mesh_full%vtx(ev1,:)
+        ve2(:) = volume_mesh_full%vtx(ev2,:)
+
+        !If more than one intersection then order intersections 
+        if (edge_clip_vm(ee)%nint .GT. 1) then
+
+            !Build intersection distances from end 1
+            do ii=1,edge_clip_vm(ee)%nint
+                intdist(ii) = norm2(edge_clip_vm(ee)%intloc(ii,:) - ve1(:))
+            end do 
+
+            !Order 
+            int_selected(:) = 0
+            intloc_temp(1:edge_clip_vm(ee)%nint,:) = edge_clip_vm(ee)%intloc(1:edge_clip_vm(ee)%nint,:) 
+            surfseg_temp(1:edge_clip_vm(ee)%nint) = edge_clip_vm(ee)%surfseg(1:edge_clip_vm(ee)%nint) 
+            int_tri_loc_temp(1:edge_clip_vm(ee)%nint) = edge_clip_vm(ee)%int_tri_loc(1:edge_clip_vm(ee)%nint) 
+            vtx_idx_temp(1:edge_clip_vm(ee)%nint) = edge_clip_vm(ee)%vtx_idx(1:edge_clip_vm(ee)%nint) 
+            do ii=1,edge_clip_vm(ee)%nint
+
+                !Select intersection at maximum distance
+                intselect = maxloc(intdist(1:edge_clip_vm(ee)%nint),1,&
+                                   mask = int_selected(1:edge_clip_vm(ee)%nint) == 0)
+
+                !Store
+                edge_clip_vm(ee)%intloc(edge_clip_vm(ee)%nint-ii+1,:) = intloc_temp(intselect,:)
+                edge_clip_vm(ee)%surfseg(edge_clip_vm(ee)%nint-ii+1) = surfseg_temp(intselect)
+                edge_clip_vm(ee)%int_tri_loc(edge_clip_vm(ee)%nint-ii+1) = int_tri_loc_temp(intselect)
+                edge_clip_vm(ee)%vtx_idx(edge_clip_vm(ee)%nint-ii+1) = vtx_idx_temp(intselect)
+                edge_clip_vm(ee)%intfrac(edge_clip_vm(ee)%nint-ii+1) = intdist(intselect)
+
+                !Set distance to zero and set to visited
+                int_selected(intselect) = 1
+                intdist(intselect) = 0.0d0 
+            end do 
+            ! print *, vtx_idx_temp(1:edge_clip_sm(ee)%nint)
+            ! print *, edge_clip_vm(ee)%vtx_idx(1:edge_clip_sm(ee)%nint)
+        end if 
+
         !Build edge sub-mesh ---- 
         !Allocate
         allocate(edge_clip_vm(ee)%edge_mesh(edge_clip_vm(ee)%nint+1,2))
-                    
-        !Set first segment (negative numbers index the intersections along the edge)
+            
+        !Set first segment (nagative numbers index the intersections along the edge)
         edge_clip_vm(ee)%edge_mesh(1,1) = ev1
         edge_clip_vm(ee)%edge_mesh(1,2) = -1
 
@@ -2852,7 +3833,7 @@ do ee=1,volume_mesh_full%nedge
         end if 
 
         !Set final segment 
-        edge_clip_vm(ee)%edge_mesh(edge_clip_vm(ee)%nint+1,1) = -edge_clip_vm(ee)%nint
+        edge_clip_vm(ee)%edge_mesh(edge_clip_vm(ee)%nint+1,1) = -1*edge_clip_vm(ee)%nint
         edge_clip_vm(ee)%edge_mesh(edge_clip_vm(ee)%nint+1,2) = ev2
     end if 
 end do 
@@ -2862,130 +3843,8 @@ end subroutine build_vol_intersect_edge_mesh
 
 
 
-!Subroutine to push volume mesh egde-surface intersections to the surface mesh structure ===========================
-subroutine push_vm_intersections_2_sm(edge_clip_sm,edge_clip_vm,tri_clip_sm,vtx_clip_sm,volume_mesh_full,surface_mesh,cm3dopt)
-implicit none 
-
-!Variables - Import
-type(vol_mesh_data) :: volume_mesh_full
-type(surface_data) :: surface_mesh
-type(edgeint), dimension(:), allocatable :: edge_clip_sm,edge_clip_vm
-type(triint), dimension(:), allocatable :: tri_clip_sm
-type(vtx_intersect), dimension(:), allocatable :: vtx_clip_sm
-type(cm3d_options) :: cm3dopt
-
-!Variables - Local 
-integer(in) :: ii,ee,aa,ff
-integer(in) :: ttgt,ftgt,etgt,vtgt,exist
-character(len=2) :: intloc
-
-!Push intersections from each volume mesh edge 
-do ee=1,volume_mesh_full%nedge
-    if (edge_clip_vm(ee)%nint .NE. 0) then 
-        do ii=1,edge_clip_vm(ee)%nint
-
-            !Target surface triangle and location
-            ttgt = edge_clip_vm(ee)%surfseg(ii)
-            intloc = edge_clip_vm(ee)%int_tri_loc(ii)
-            
-            !Add to correct structure
-            if (intloc(1:1) == 'i') then !within triangle -> add to tri_clip_sm
-
-                !Set intersect
-                if (tri_clip_sm(ttgt)%nvtx+1 .GT. tri_clip_sm(ttgt)%nitem) then !append
-                    call append_tri_clip_entry(tri_clip_sm,tri_clip_sm(ttgt)%nitem*2,ttgt)
-                    if (tri_clip_sm(ttgt)%nitem .GT. cm3dopt%max_int_size) then 
-                        cm3dopt%max_int_size = tri_clip_sm(ttgt)%nitem
-                    end if 
-                end if
-                tri_clip_sm(ttgt)%nvtx = tri_clip_sm(ttgt)%nvtx + 1
-                tri_clip_sm(ttgt)%vtx_idx(tri_clip_sm(ttgt)%nvtx) = edge_clip_vm(ee)%vtx_idx(ii)
-                tri_clip_sm(ttgt)%edge_int_idx(tri_clip_sm(ttgt)%nvtx) = ee 
-                tri_clip_sm(ttgt)%intloc(tri_clip_sm(ttgt)%nvtx,:) = edge_clip_vm(ee)%intloc(ii,:)
-
-                !Add all faces on this edge to the intersect
-                do aa=1,4
-                    ftgt = volume_mesh_full%E2F(ee,aa)
-                    if (ftgt .GT. 0) then 
-                        tri_clip_sm(ttgt)%nfint(tri_clip_sm(ttgt)%nvtx) = tri_clip_sm(ttgt)%nfint(tri_clip_sm(ttgt)%nvtx) + 1
-                        tri_clip_sm(ttgt)%face_int_idx(tri_clip_sm(ttgt)%nvtx,tri_clip_sm(ttgt)%nfint(tri_clip_sm(ttgt)%nvtx)) &
-                        = ftgt
-                    end if 
-                end do 
-            elseif (intloc(1:1) == 'e') then !on an edge 
-
-                !Identify edge
-                if (intloc == 'e1') then !on edge 1
-                    etgt = surface_mesh%F2E(ttgt,1)
-                elseif (intloc == 'e2') then !on edge 2
-                    etgt = surface_mesh%F2E(ttgt,2)
-                elseif (intloc == 'e3') then !on edge 3
-                    etgt = surface_mesh%F2E(ttgt,3)
-                end if 
-                
-                !Set properties 
-                edge_clip_sm(etgt)%type = 4
-                edge_clip_sm(etgt)%nint = edge_clip_sm(etgt)%nint + 1
-                edge_clip_sm(etgt)%intloc(edge_clip_sm(etgt)%nint,:) = edge_clip_vm(ee)%intloc(ii,:)
-                edge_clip_sm(etgt)%vtx_idx(edge_clip_sm(etgt)%nint) = edge_clip_vm(ee)%vtx_idx(ii)
-
-                !Add intersection for each vmesh face on this volume mesh edge 
-                do aa=1,4
-                    ftgt = volume_mesh_full%E2F(ee,aa)
-                    if (ftgt .GT. 0) then 
-                        edge_clip_sm(etgt)%nfint(edge_clip_sm(etgt)%nint) = edge_clip_sm(etgt)%nfint(edge_clip_sm(etgt)%nint) &
-                        + 1
-                        edge_clip_sm(etgt)%vmface(edge_clip_sm(etgt)%nint,edge_clip_sm(etgt)%nfint(edge_clip_sm(etgt)%nint)) &
-                        = ftgt 
-                    end if 
-                end do 
-            elseif (intloc(1:1) == 'v') then !on a vertex
-                
-                !Identify vertex
-                if (intloc == 'v1') then !on vertex 1
-                    vtgt = surface_mesh%connectivity(ttgt,1)
-                elseif (intloc == 'v2') then !on vertex 2
-                    vtgt = surface_mesh%connectivity(ttgt,2)
-                elseif (intloc == 'v3') then !on vertex 3
-                    vtgt = surface_mesh%connectivity(ttgt,3)
-                end if 
-
-                !Set intersect index on the volume mesh edge as the surface vertex
-                edge_clip_vm(ee)%vtx_idx(ii) = vtgt !set as positive as this points to the same vertex set as the surface mesh vertices 
-
-                !Add each face on this vertex
-                do aa=1,4
-
-                    !Target face
-                    ftgt = volume_mesh_full%E2F(ee,aa)
-
-                    !Check if this face already intersects this vertex
-                    exist = 0 
-                    do ff=1,vtx_clip_sm(vtgt)%nintersect
-                        if (vtx_clip_sm(vtgt)%face_int_idx(ff) == ftgt) then 
-                            exist = 1
-                            exit 
-                        end if 
-                    end do 
-
-                    !Add if new
-                    if (exist == 0) then 
-                        vtx_clip_sm(vtgt)%nintersect = vtx_clip_sm(vtgt)%nintersect + 1
-                        vtx_clip_sm(vtgt)%face_int_idx(vtx_clip_sm(vtgt)%nintersect) = ftgt 
-                    end if 
-                end do 
-            end if 
-        end do 
-    end if
-end do 
-return 
-end subroutine push_vm_intersections_2_sm
-
-
-
-
-!Subroutine to perturb vertices that lie exactly on geometry surface to off the surface to avoid degenerate intersections ===========================
-subroutine perturb_onsurf_vertices(volume_mesh_full,surface_adtree,surface_mesh,cm3dopt)
+!Subroutine to perturb volume mesh vertices that lie exactly on geometry surface to off the surface to avoid degenerate intersections ===========================
+subroutine perturb_onsurf_vmesh_vertices(volume_mesh_full,surface_adtree,surface_mesh,cm3dopt)
 implicit none 
 
 !Variables - Import
@@ -3002,7 +3861,7 @@ real(dp) :: cpadSZ,zxmin,zxmax,zymin,zymax,zzmin,zzmax,enorm,enorm_max,zitol
 real(dp) :: vf1(3),vf2(3),vf3(3),vid(4)
 
 !Set comparison tollerance 
-zitol = 1e-12_dp
+zitol = 2.0d0*cm3dopt%intcointol !twice the intersection tollerance 
 
 !Initialise selected nodes 
 nselected = 0 
@@ -3022,7 +3881,7 @@ do vv=1,volume_mesh_full%nvtx
             enorm_max = enorm 
         end if 
     end do 
-    cpadSZ = enorm_max*0.1d0
+    cpadSZ = enorm_max*0.005d0 !10.0d0!*zitol*enorm_max
 
     !Intersection bounding box
     zxmin = volume_mesh_full%vtx(vv,1) - cpadSZ !tgt bounding box -> xmin
@@ -3068,7 +3927,7 @@ do vv=1,volume_mesh_full%nvtx
 
         !If surface co-incident then perturb away from the surface 
         if (surf_coin == 1) then 
-            volume_mesh_full%vtx(vv,:) = volume_mesh_full%vtx(vv,:) + 0.01d0*cpadSZ*surface_mesh%face_normal(tri_tgt,:)
+            volume_mesh_full%vtx(vv,:) = volume_mesh_full%vtx(vv,:) + 0.01d0*enorm_max*surface_mesh%face_normal(tri_tgt,:)
             Npert = Npert + 1
             ! print *, vv
         end if 
@@ -3077,400 +3936,186 @@ end do
 
 !Display
 if (cm3dopt%dispt == 1) then
-    write(*,'(A,I0,A)') '    {perturbed ',Npert,' vertices}'
+    write(*,'(A,I0,A)') '    {perturbed ',Npert,' volume vertices}'
 end if
 return 
-end subroutine perturb_onsurf_vertices
+end subroutine perturb_onsurf_vmesh_vertices
 
 
 
 
-!Clip volume mesh edges to surface subroutine ===========================
-subroutine clip_voledges2surffaces(edge_clip,volume_mesh_full,surface_adtree,surface_mesh,cm3dopt,vtx_idx_smesh,cm3dfailure)
+!Subroutine to perturb surface mesh vertices so they dont lie exactly on volume mesh faces ===========================
+subroutine perturb_onmesh_smesh_vertices(volume_mesh_full,surface_adtree,surface_mesh,cm3dopt)
 implicit none 
 
 !Variables - Import
-integer(in) :: vtx_idx_smesh,cm3dfailure
 type(vol_mesh_data) :: volume_mesh_full
-type(edgeint), dimension(:), allocatable :: edge_clip
 type(cm3d_options) :: cm3dopt
 type(surface_data) :: surface_mesh
 type(tree_data) :: surface_adtree
 
 !Variables - Local 
-integer(in) :: ee,nn,kk,ii,aa
-integer(in) :: etype_check,ftgt,fadj,etgt,vtgt1,vtgt2,f_connected,ev1,ev2,nselected
-integer(in) :: trinew,int_type,Neintersect,intselect,sint_idx,N_edge_intersect,N_edge_intersectf
-integer(in) :: int_selected(cm3dopt%NintEmax),edge_intersect_type(cm3dopt%NintEmax)
-integer(in) :: node_select(surface_adtree%nnode),edge_intersect_keep(cm3dopt%NintEmax)
-integer(in) :: edge_intersect_tri(cm3dopt%NintEmax),edge_intersect_trif(cm3dopt%NintEmax)
-real(dp) :: cpadSZ,zxmin,zxmax,zymin,zymax,zzmin,zzmax,segnorm,intdelta,zitol,zitol_bc
-real(dp) :: ve1(3),ve2(3),segdir(3),vf1(3),vf2(3),vf3(3),vint(3),vintBC(3)
-real(dp) :: edge_intersect_norm(cm3dopt%NintEmax)
-real(dp) :: edge_intersect(cm3dopt%NintEmax,3),edge_intersectf(cm3dopt%NintEmax,3)
-real(dp) :: edge_intersect_bcc(cm3dopt%NintEmax,3),edge_intersect_bccf(cm3dopt%NintEmax,3)
-character(len=2) :: int_location_on_tri
-character(len=2) :: edge_int_tri_loc(cm3dopt%NintEmax),edge_int_tri_locf(cm3dopt%NintEmax)
+integer(in) :: ff,vv,aa,nn,kk,ee
+integer(in) :: etgt,nselected,surf_coin,Npert,nvtx_selected,ttgt,vtgt,vft1,vft2,vft3
+integer(in) :: node_select(surface_adtree%nnode),vtx2int(surface_mesh%nvtx),vtx_select(surface_mesh%nvtx)
+real(dp) :: cpadSZ,zxmin,zxmax,zymin,zymax,zzmin,zzmax,zitol
+real(dp) :: vid(4),Nf(3),vt1(3),vt2(3),vt3(3),vp(3)
 
-!Set comparison tollerances 
-zitol = 1e-12_dp !Set as intersection tollerance
-zitol_bc = 1e-12_dp !Set as barycentric tollerance 
-
-!Allocate edge_clip structure 
-allocate(edge_clip(volume_mesh_full%nedge))
-
-!Initialise
-N_edge_intersect = 0 
-edge_intersect_tri(:) = 0 
-edge_intersect_type(:) = 0 
-edge_intersect(:,:) = 0.0d0 
-edge_intersect_bcc(:,:) = 0.0d0 
+!Set comparison tollerance 
+zitol = 2.0d0*cm3dopt%intcointol !twice the intersection tollerance 
 
 !Initialise selected nodes 
 nselected = 0 
 node_select(:) = 0 
 
-!Find intersections and classify edges
-sint_idx = 0 
-Neintersect = 0 
-etype_check = 0 
-do ee=1,volume_mesh_full%nedge
-    edge_clip(ee)%type = 0 
-    edge_clip(ee)%nint = 0
-end do 
-do ee=1,volume_mesh_full%nedge
+!Identify and perturb vertices 
+Npert = 0
+vtx2int(:) = 0
+vtx_select(:) = 0 
+do ff=1,volume_mesh_full%nface
 
-    !Initialise clipping on this edge 
-    edge_clip(ee)%type = 0 
-    edge_clip(ee)%nint = 0
-
-    !Edge vertices 
-    ev1 = volume_mesh_full%edges(ee,1)
-    ev2 = volume_mesh_full%edges(ee,2)
-
-    !Edge end vertices
-    ve1(:) = volume_mesh_full%vtx(ev1,:)
-    ve2(:) = volume_mesh_full%vtx(ev2,:)
-
-    !Edge length and direction 
-    segdir(:) = ve2(:) - ve1(:)
-    segnorm = norm2(segdir(:))
+    !Build face normal vector 
+    Nf = newell_normal(volume_mesh_full%faces(ff)%nvtx,volume_mesh_full%faces(ff)%vertices,volume_mesh_full%vtx)
 
     !Padding size 
-    cpadSZ = segnorm
+    cpadSZ = norm2(Nf)*0.005d0 !*10.0d0*zitol
 
     !Intersection bounding box
-    zxmin = min(ve1(1),ve2(1)) - cpadSZ*cm3dopt%ad_padding !tgt bounding box -> xmin
-    zxmax = max(ve1(1),ve2(1)) + cpadSZ*cm3dopt%ad_padding !tgt bounding box -> xmax
-    zymin = min(ve1(2),ve2(2)) - cpadSZ*cm3dopt%ad_padding !tgt bounding box -> ymin
-    zymax = max(ve1(2),ve2(2)) + cpadSZ*cm3dopt%ad_padding !tgt bounding box -> ymax
-    zzmin = min(ve1(3),ve2(3)) - cpadSZ*cm3dopt%ad_padding !tgt bounding box -> zmin
-    zzmax = max(ve1(3),ve2(3)) + cpadSZ*cm3dopt%ad_padding !tgt bounding box -> zmax
+    zxmin = minval(volume_mesh_full%vtx(volume_mesh_full%faces(ff)%vertices(:),1)) - cpadSZ !tgt bounding box -> xmin
+    zxmax = maxval(volume_mesh_full%vtx(volume_mesh_full%faces(ff)%vertices(:),1)) + cpadSZ !tgt bounding box -> xmax
+    zymin = minval(volume_mesh_full%vtx(volume_mesh_full%faces(ff)%vertices(:),2)) - cpadSZ !tgt bounding box -> ymin
+    zymax = maxval(volume_mesh_full%vtx(volume_mesh_full%faces(ff)%vertices(:),2)) + cpadSZ !tgt bounding box -> ymax
+    zzmin = minval(volume_mesh_full%vtx(volume_mesh_full%faces(ff)%vertices(:),3)) - cpadSZ !tgt bounding box -> zmin
+    zzmax = maxval(volume_mesh_full%vtx(volume_mesh_full%faces(ff)%vertices(:),3)) + cpadSZ !tgt bounding box -> zmax
 
-    !Identify any triangle bounding boxes that may overlap the edge 
+    !Identify any triangle bounding boxes that may overlap the face 
     call search_ADtree(nselected,node_select,surface_adtree,zxmin,zxmax,zymin,zymax,zzmin,zzmax)
 
-    !Clip if there are any potential surface overlaps 
-    if (nselected == 0) then 
-        !Do nothing 
-    else !Clip edge
+    !If any triangles 
+    if (nselected .NE. 0) then 
 
-        !Search for intersections 
-        N_edge_intersect = 0 
-
-        edge_intersect_tri(:) = 0 
-        edge_intersect_type(:) = 0 
-        edge_intersect(:,:) = 0.0d0 
+        !Build list of vertices on these triangles 
+        nvtx_selected = 0 
         do nn=1,nselected
             do kk=1,surface_adtree%tree(node_select(nn))%nentry
-
-                !Target face 
-                ftgt = surface_adtree%tree(node_select(nn))%entry(kk)
-
-                !Verticies of this face
-                vf1(:) = surface_mesh%vertices(surface_mesh%connectivity(ftgt,1),:)
-                vf2(:) = surface_mesh%vertices(surface_mesh%connectivity(ftgt,2),:)
-                vf3(:) = surface_mesh%vertices(surface_mesh%connectivity(ftgt,3),:)
-
-                !Test intersection
-                int_type = line_tri_intersect_bool(ve1,ve2,vf1,vf2,vf3)
-                if (int_type == 1) then 
-
-                    !Find intersection location (is within edge and triangle here)
-                    vint = line_tri_intersect(ve1,ve2,vf1,vf2,vf3)
-                    vintBC = get_barycentric_coordinates(vint,vf1,vf2,vf3)
-                    ! vintBC = baryc_line_tri_intersect(ve1,ve2,vf1,vf2,vf3)
-
-                    !Check if a new surface triangle
-                    trinew = 1 
-                    do ii=1,N_edge_intersect
-                        if (ftgt == edge_intersect_tri(N_edge_intersect)) then 
-                            trinew = 0 
-                        end if
-                    end do  
-
-                    !Identify location on this triangle 
-                    int_location_on_tri = vtx_bary_tri_loc(vintBC(1),vintBC(2),vintBC(3),zitol_bc)
-
-                    !Add intersection if on a new triangle 
-                    if (trinew == 1) then 
-                        N_edge_intersect = N_edge_intersect + 1
-                        if (N_edge_intersect .GT. cm3dopt%NintEmax) then 
-                            cm3dfailure = 1
-                            print *, '** maximum number of edge-geometry intersections exceeded on edge ',ee
-                            return 
-                        end if 
-                        edge_intersect(N_edge_intersect,:) = vint(:)
-                        edge_intersect_bcc(N_edge_intersect,:) = vintBC(:)
-                        edge_intersect_tri(N_edge_intersect) = ftgt
-                        edge_int_tri_loc(N_edge_intersect) = int_location_on_tri
+                ttgt = surface_adtree%tree(node_select(nn))%entry(kk)
+                do ee=1,3
+                    etgt = surface_mesh%F2E(ttgt,ee)
+                    vtgt = surface_mesh%edges(etgt,1)
+                    if (vtx_select(vtgt) == 0) then 
+                        nvtx_selected = nvtx_selected + 1
+                        vtx2int(nvtx_selected) = vtgt 
+                        vtx_select(vtgt) = nvtx_selected
                     end if
+                    vtgt = surface_mesh%edges(etgt,2)
+                    if (vtx_select(vtgt) == 0) then 
+                        nvtx_selected = nvtx_selected + 1
+                        vtx2int(nvtx_selected) = vtgt 
+                        vtx_select(vtgt) = nvtx_selected
+                    end if
+                end do 
+            end do  
+        end do 
+        vtx_select(vtx2int(1:nvtx_selected)) = 0 
+        
+        !Set volume mesh face triangulation base vertex
+        vft1 = volume_mesh_full%faces(ff)%vertices(1)
+        vt1(:) = volume_mesh_full%vtx(vft1,:)
+
+        !Perturb vertices co-incicdent with this volume mesh face 
+        do vv=1,nvtx_selected
+
+            !Target vertex
+            vtgt = vtx2int(vv)
+            vp(:) = surface_mesh%vertices(vtgt,:)
+
+            !Search for proximity with this volume mesh face
+            surf_coin = 0 
+            do aa=2,volume_mesh_full%faces(ff)%nvtx-1
+
+                !Triangle on this face 
+                vft2 = aa 
+                vft3 = aa + 1
+                vft2 = volume_mesh_full%faces(ff)%vertices(vft2)
+                vft3 = volume_mesh_full%faces(ff)%vertices(vft3)
+
+                !Vertices 
+                vt2(:) = volume_mesh_full%vtx(vft2,:)
+                vt3(:) = volume_mesh_full%vtx(vft3,:)
+
+                !Check for proximity 
+                vid = min_dist_point_to_tri(vp,vt1,vt2,vt3)
+                if (vid(4) .LE. zitol) then 
+                    surf_coin = 1
+                    exit 
                 end if 
             end do 
+
+            !If surface co-incident then perturb away from the surface 
+            if (surf_coin == 1) then 
+                surface_mesh%vertices(vtgt,:) = surface_mesh%vertices(vtgt,:) + 2.0d0*cpadSZ*surface_mesh%vtx_normal(vtgt,:)
+                Npert = Npert + 1
+            end if 
         end do 
-
-        !If any intersections 
-        if (N_edge_intersect .GT. 0) then !Order intersections and filter based on entry-exit, then identify internal and external sections of the edge 
-
-            !Filter intersections
-            if (N_edge_intersect .GE. 2) then  
-
-                !Initialise 
-                edge_intersect_keep(:) = 1 
-
-                !Remove any required intersections 
-                !print *, '======================> ',N_edge_intersect
-                do kk=1,N_edge_intersect
-                    ! print *,'--'
-                    ! print *, int_location_on_tri,edge_intersect_bcc(kk,:),edge_intersect_tri(kk)
-                    ! print *, edge_intersect(kk,:) 
-                    if (edge_intersect_keep(kk) == 1) then 
-                        int_location_on_tri = edge_int_tri_loc(kk)
-                        ftgt = edge_intersect_tri(kk)
-                        if (int_location_on_tri .NE. 'in') then !if on the triangle boundary 
-                            if (int_location_on_tri(1:1) == 'e') then !on triangle edge -> check face across edge and those on both vertices at the edge ends 
-
-                                !Target edge and vertices 
-                                if (int_location_on_tri(2:2) == '1') then 
-                                    etgt = 1 
-                                    vtgt1 = 1
-                                    vtgt2 = 2
-                                elseif (int_location_on_tri(2:2) == '2') then 
-                                    etgt = 2 
-                                    vtgt1 = 2
-                                    vtgt2 = 3
-                                elseif (int_location_on_tri(2:2) == '3') then 
-                                    etgt = 3 
-                                    vtgt1 = 3
-                                    vtgt2 = 1
-                                end if 
-                                etgt = surface_mesh%F2E(ftgt,etgt)
-                                vtgt1 = surface_mesh%connectivity(ftgt,vtgt1)
-                                vtgt2 = surface_mesh%connectivity(ftgt,vtgt2)
-
-                                !Remove intersections on adjacent faces that co-incident with this one 
-                                do nn=1,N_edge_intersect
-                                    if (nn .NE. kk) then !not the same intersect 
-
-                                        !Adjacent face 
-                                        fadj = edge_intersect_tri(nn)
-
-                                        !Test if this face contains one of etgt/vtgt1/vtgt2
-                                        f_connected = 0 
-                                        do aa=1,3
-                                            if ((surface_mesh%connectivity(fadj,aa) == vtgt1) .OR. &
-                                            (surface_mesh%connectivity(fadj,aa) == vtgt2)) then 
-                                                f_connected = 1
-                                                exit 
-                                            end if 
-                                            if (surface_mesh%F2E(fadj,aa) == etgt) then 
-                                                f_connected = 1
-                                                exit 
-                                            end if 
-                                        end do  
-
-                                        !If the face of this other intersect is connected then check if within tollerance to remove 
-                                        if (f_connected == 1) then 
-                                            intdelta = norm2(edge_intersect(kk,:) - edge_intersect(nn,:))
-                                            if (intdelta .LE. zitol) then 
-                                                !print *, 'intfrem'
-                                                edge_intersect_keep(nn) = 0 
-                                            end if 
-                                        end if 
-                                    end if 
-                                end do 
-                            elseif (int_location_on_tri(1:1) == 'v') then !on triangle vertex -> check triangles on this vertex 
-
-                                !Target vertex
-                                if (int_location_on_tri(2:2) == '1') then 
-                                    vtgt1 = 1
-                                elseif (int_location_on_tri(2:2) == '2') then 
-                                    vtgt1 = 2
-                                elseif (int_location_on_tri(2:2) == '3') then 
-                                    vtgt1 = 3
-                                end if
-                                vtgt1 = surface_mesh%connectivity(ftgt,vtgt1)
-
-                                !Remove intersections on adjacent faces that co-incident with this one 
-                                do nn=1,N_edge_intersect
-                                    if (nn .NE. kk) then !not the same intersect 
-
-                                        !Adjacent face 
-                                        fadj = edge_intersect_tri(nn)
-
-                                        !Test if this face contains vtgt1
-                                        f_connected = 0 
-                                        do aa=1,3
-                                            if (surface_mesh%connectivity(fadj,aa) == vtgt1) then 
-                                                f_connected = 1
-                                                exit 
-                                            end if 
-                                        end do  
-
-                                        !If the face of this other intersect is connected then check if within tollerance to remove 
-                                        if (f_connected == 1) then 
-                                            intdelta = norm2(edge_intersect(kk,:) - edge_intersect(nn,:))
-                                            if (intdelta .LE. zitol) then 
-                                                !print *, 'intfrem'
-                                                edge_intersect_keep(nn) = 0 
-                                            end if 
-                                        end if 
-                                    end if 
-                                end do 
-                            end if 
-                        end if 
-                    end if 
-                end do 
-                ! print *, '--- result: '
-                ! print *, edge_intersect_keep(1:N_edge_intersect)
-                ! do kk=1,N_edge_intersect
-                !     if (edge_intersect_keep(kk) == 1) then 
-                !         print *, edge_intersect(kk,:),edge_intersect_tri(kk)
-                !     end if 
-                ! end do 
-
-                !Construct filtered intersect list 
-                N_edge_intersectf = 0 
-                do kk=1,N_edge_intersect
-                    if (edge_intersect_keep(kk) == 1) then
-                        N_edge_intersectf = N_edge_intersectf + 1
-                        edge_intersectf(N_edge_intersectf,:) = edge_intersect(kk,:)
-                        edge_intersect_bccf(N_edge_intersectf,:) = edge_intersect_bcc(kk,:)
-                        edge_intersect_trif(N_edge_intersectf) = edge_intersect_tri(kk)
-                        edge_int_tri_locf(N_edge_intersectf) = edge_int_tri_loc(kk)
-                    end if
-                end do 
-                ! print *, N_edge_intersect,' --> ',N_edge_intersectf
-            else
-                N_edge_intersectf = N_edge_intersect
-                edge_intersectf(1:N_edge_intersect,:) = edge_intersect(1:N_edge_intersect,:)
-                edge_intersect_bccf(1:N_edge_intersect,:) = edge_intersect_bcc(1:N_edge_intersect,:)
-                edge_intersect_trif(1:N_edge_intersect) = edge_intersect_tri(1:N_edge_intersect)
-                edge_int_tri_locf(1:N_edge_intersect) = edge_int_tri_loc(1:N_edge_intersect)
-            end if
-
-            !Count intersecting edge 
-            Neintersect = Neintersect + 1
-
-            !Set edge type to intersecting 
-            edge_clip(ee)%type = 4
-
-            !Store count
-            edge_clip(ee)%nint = N_edge_intersectf
-
-            !Store reference end 1 of edge 
-            edge_clip(ee)%refend1 = ev1
-
-            !Set intersection list to ordered from edge start refend1
-            int_selected(:) = 0 
-            edge_intersect_norm(:) = 0.0d0  
-            do kk=1,N_edge_intersectf
-                edge_intersect_norm(kk) = norm2(edge_intersectf(kk,:) - ve1(:))
-            end do 
-            allocate(edge_clip(ee)%intloc(N_edge_intersectf,3))
-            allocate(edge_clip(ee)%intlocBC(N_edge_intersectf,3))
-            allocate(edge_clip(ee)%surfseg(N_edge_intersectf)) 
-            allocate(edge_clip(ee)%int_tri_loc(N_edge_intersectf)) 
-            allocate(edge_clip(ee)%intfrac(N_edge_intersectf)) 
-            allocate(edge_clip(ee)%vtx_idx(N_edge_intersectf))
-            edge_clip(ee)%vtx_idx(:) = 0 !construct later when these vertices are added to the mesh
-            do kk=1,N_edge_intersectf
-
-                !Select intersection at maximum distance
-                intselect = maxloc(edge_intersect_norm(1:N_edge_intersectf),1,&
-                                   mask = int_selected(1:N_edge_intersectf) == 0)
-
-                !Store 
-                edge_clip(ee)%intloc(N_edge_intersectf-kk+1,:) = edge_intersectf(intselect,:)
-                edge_clip(ee)%intlocBC(N_edge_intersectf-kk+1,:) = edge_intersect_bccf(intselect,:)
-                edge_clip(ee)%surfseg(N_edge_intersectf-kk+1) = edge_intersect_trif(intselect)
-                edge_clip(ee)%int_tri_loc(N_edge_intersectf-kk+1) = edge_int_tri_locf(intselect)
-                edge_clip(ee)%intfrac(N_edge_intersectf-kk+1) = edge_intersect_norm(intselect)/segnorm
-
-                !Index the vertices on this edge 
-                vtx_idx_smesh = vtx_idx_smesh + 1 
-                edge_clip(ee)%vtx_idx(N_edge_intersectf-kk+1) = vtx_idx_smesh
-
-                !Set distance to zero and set to visited
-                int_selected(intselect) = 1
-                edge_intersect_norm(intselect) = 0.0d0 
-            end do 
-
-            !Classify each surface intersection as entry/exit 
-            allocate(edge_clip(ee)%int_inout(N_edge_intersectf))
-            ! print *, '==============='
-            do kk=1,N_edge_intersectf
-
-                !Triangle vertices 
-                ftgt = edge_clip(ee)%surfseg(kk)
-                vf1(:) = surface_mesh%vertices(surface_mesh%connectivity(ftgt,1),:)
-                vf2(:) = surface_mesh%vertices(surface_mesh%connectivity(ftgt,2),:)
-                vf3(:) = surface_mesh%vertices(surface_mesh%connectivity(ftgt,3),:)
-
-                !Set intersect state 
-                edge_clip(ee)%int_inout(kk) = line_tri_intersect_type(ve1,ve2,vf1,vf2,vf3)
-                ! print *, edge_clip(ee)%int_inout(kk)
-            end do 
-        end if 
     end if 
 end do 
 
-!Debug write all vm-surface intersections ------- 
-! open(11,file='io/vm_surf_intersect_in.dat')
-! open(12,file='io/vm_surf_intersect_out.dat')
-! do ee=1,volume_mesh_full%nedge
-!     if (edge_clip(ee)%type == 4) then 
-!         do aa=1,edge_clip(ee)%nint
-!             if (edge_clip(ee)%int_inout(aa)(1:1) == 'i') then 
-!                 write(11,*) edge_clip(ee)%intloc(aa,:)
-!             elseif (edge_clip(ee)%int_inout(aa)(1:1) == 'o') then 
-!                 write(12,*) edge_clip(ee)%intloc(aa,:)
-!             end if 
-!         end do 
-!     end if
-! end do 
-! close(11)
-! close(12)
+!Display
+if (cm3dopt%dispt == 1) then
+    write(*,'(A,I0,A)') '    {perturbed ',Npert,' surface vertices}'
+end if
 return 
-end subroutine clip_voledges2surffaces
+end subroutine perturb_onmesh_smesh_vertices
 
 
 
 
 !Classify edge-vertex gometry containment status subroutine ===========================
-subroutine classify_edge_vertex_geom_containment(vtx_external,edge_clip,volume_mesh_full,cm3dopt,cm3dfailure)
+subroutine classify_edge_vertex_geom_containment(vtx_external,edge_clip_vm,volume_mesh_full,surface_mesh,cm3dopt,cm3dfailure)
 implicit none 
 
 !Variables - Import
 integer(in) :: cm3dfailure
 integer(in), dimension(:), allocatable :: vtx_external
+type(edgeint), dimension(:), allocatable :: edge_clip_vm
 type(vol_mesh_data) :: volume_mesh_full
-type(edgeint), dimension(:), allocatable :: edge_clip
+type(surface_data) :: surface_mesh
 type(cm3d_options) :: cm3dopt
 
 !Variables - Local 
 integer(in) :: ee,ff,vv,kk
-integer(in) :: ev1,ev2,nupdate,nflooditer,Nexternal,Ninternal
+integer(in) :: ev1,ev2,nupdate,nflooditer,Nexternal,Ninternal,ftgt,stri,vf1,vf2,vf3
+real(dp) :: ve1(3),ve2(3),vt1(3),vt2(3),vt3(3)
+character(len=2) int_type
+
+!Classify each volume mesh surface intersection as entry/exit 
+do ee=1,volume_mesh_full%nedge
+    if (edge_clip_vm(ee)%type == 4) then 
+
+        !Edge ends 
+        ev1 = volume_mesh_full%edges(ee,1)
+        ev2 = volume_mesh_full%edges(ee,2)
+
+        !Edge vertices 
+        ve1(:) = volume_mesh_full%vtx(ev1,:)
+        ve2(:) = volume_mesh_full%vtx(ev2,:)
+
+        !Classify each intersection
+        allocate(edge_clip_vm(ee)%int_inout(edge_clip_vm(ee)%nint))
+        do kk=1,edge_clip_vm(ee)%nint
+
+            !Triangle vertices 
+            ftgt = edge_clip_vm(ee)%surfseg(kk)
+            vt1(:) = surface_mesh%vertices(surface_mesh%connectivity(ftgt,1),:)
+            vt2(:) = surface_mesh%vertices(surface_mesh%connectivity(ftgt,2),:)
+            vt3(:) = surface_mesh%vertices(surface_mesh%connectivity(ftgt,3),:)
+
+            !Set intersect state 
+            edge_clip_vm(ee)%int_inout(kk) = line_tri_intersect_type(ve1,ve2,vt1,vt2,vt3)
+            ! print *, edge_clip(ee)%int_inout(kk)
+        end do 
+    end if 
+end do 
 
 !Initialise vtx_external
 allocate(vtx_external(volume_mesh_full%nvtx))
@@ -3478,23 +4123,23 @@ vtx_external(:) = 0
 
 !Classify the vertices on ends of surface intersecting edges 
 do ee=1,volume_mesh_full%nedge
-    if (edge_clip(ee)%type == 4) then 
+    if (edge_clip_vm(ee)%type == 4) then 
 
         !Edge ends 
         ev1 = volume_mesh_full%edges(ee,1)
         ev2 = volume_mesh_full%edges(ee,2)
 
         !Classify end 1 
-        if (edge_clip(ee)%int_inout(1)(1:1) == 'i') then !intersection is in -> vertex 1 is external 
+        if (edge_clip_vm(ee)%int_inout(1)(1:1) == 'i') then !intersection is in -> vertex 1 is external 
             vtx_external(ev1) = 1
-        elseif (edge_clip(ee)%int_inout(1)(1:1) == 'o') then !intersection is out -> vertex 1 is internal 
+        elseif (edge_clip_vm(ee)%int_inout(1)(1:1) == 'o') then !intersection is out -> vertex 1 is internal 
             vtx_external(ev1) = -1
         end if 
 
         !Classify end 2 
-        if (edge_clip(ee)%int_inout(edge_clip(ee)%nint)(1:1) == 'i') then !intersection is in -> vertex 2 is internal 
+        if (edge_clip_vm(ee)%int_inout(edge_clip_vm(ee)%nint)(1:1) == 'i') then !intersection is in -> vertex 2 is internal 
             vtx_external(ev2) = -1
-        elseif (edge_clip(ee)%int_inout(edge_clip(ee)%nint)(1:1) == 'o') then !intersection is out -> vertex 2 is external 
+        elseif (edge_clip_vm(ee)%int_inout(edge_clip_vm(ee)%nint)(1:1) == 'o') then !intersection is out -> vertex 2 is external 
             vtx_external(ev2) = 1
         end if 
     end if 
@@ -3505,7 +4150,7 @@ nflooditer = 0
 do ff=1,volume_mesh_full%nedge
     nupdate = 0 
     do ee=1,volume_mesh_full%nedge
-        if (edge_clip(ee)%type == 0) then  
+        if (edge_clip_vm(ee)%type == 0) then  
         
             !Edge ends 
             ev1 = volume_mesh_full%edges(ee,1)
@@ -3555,35 +4200,35 @@ do ee=1,volume_mesh_full%nedge
     ev2 = volume_mesh_full%edges(ee,2)
 
     !Classification state
-    if (edge_clip(ee)%type == 0) then !unclassified non-intersecting edge -> classify full edge
+    if (edge_clip_vm(ee)%type == 0) then !unclassified non-intersecting edge -> classify full edge
         
         !Classify full edge
         if ((vtx_external(ev1) == 1) .AND. (vtx_external(ev2) == 1)) then !external edge
-            edge_clip(ee)%type = 2
+            edge_clip_vm(ee)%type = 2
         elseif ((vtx_external(ev1) == -1) .AND. (vtx_external(ev2) == -1)) then !internal edge
-            edge_clip(ee)%type = 3
+            edge_clip_vm(ee)%type = 3
         else
-            print *, '** type 0 intersecting edge identified: ',vtx_external(ev1),' -> ',vtx_external(ev2)
-            print *, volume_mesh_full%vtx(ev1,:)
-            print *, volume_mesh_full%vtx(ev2,:)
+            ! print *, '** type 0 intersecting edge identified: ',vtx_external(ev1),' -> ',vtx_external(ev2)
+            ! print *, volume_mesh_full%vtx(ev1,:)
+            ! print *, volume_mesh_full%vtx(ev2,:)
         end if 
-    elseif (edge_clip(ee)%type == 4) then !intersecting edge -> classify edge segments between intersections 
+    elseif (edge_clip_vm(ee)%type == 4) then !intersecting edge -> classify edge segments between intersections 
 
         !Allocate type structure 
-        allocate(edge_clip(ee)%int_seg_type(edge_clip(ee)%nint+1))
-        edge_clip(ee)%int_seg_type(:) = 0 
+        allocate(edge_clip_vm(ee)%int_seg_type(edge_clip_vm(ee)%nint+1))
+        edge_clip_vm(ee)%int_seg_type(:) = 0 
 
         !Set first segment 
-        if ((edge_clip(ee)%int_inout(1)(1:1) == 'i') .AND. (vtx_external(ev1) == 1)) then !entry so segment external 
-            edge_clip(ee)%int_seg_type(1) = 2
-        elseif ((edge_clip(ee)%int_inout(1)(1:1) == 'o') .AND. (vtx_external(ev1) == -1)) then !exit so segment internal 
-            edge_clip(ee)%int_seg_type(1) = 3
+        if ((edge_clip_vm(ee)%int_inout(1)(1:1) == 'i') .AND. (vtx_external(ev1) == 1)) then !entry so segment external 
+            edge_clip_vm(ee)%int_seg_type(1) = 2
+        elseif ((edge_clip_vm(ee)%int_inout(1)(1:1) == 'o') .AND. (vtx_external(ev1) == -1)) then !exit so segment internal 
+            edge_clip_vm(ee)%int_seg_type(1) = 3
         else 
             cm3dfailure = 1
             print *, '** edge intersection enter/exit disagreement with vtxinternal at edge: ',ee
-            print *, edge_clip(ee)%nint
-            print *, edge_clip(ee)%int_inout(1)
-            print *, edge_clip(ee)%type
+            print *, edge_clip_vm(ee)%nint
+            print *, edge_clip_vm(ee)%int_inout(1)
+            print *, edge_clip_vm(ee)%type
             print *, vtx_external(ev1)
             print *, volume_mesh_full%vtx(ev1,:)
             print *, volume_mesh_full%vtx(ev2,:)
@@ -3591,24 +4236,56 @@ do ee=1,volume_mesh_full%nedge
         end if 
 
         !Set remaining segments 
-        do kk=2,edge_clip(ee)%nint+1
-            if (edge_clip(ee)%int_seg_type(kk-1) == 2) then !currently external
-                if (edge_clip(ee)%int_inout(kk-1)(1:1) == 'i') then !entry -> current segment internal
-                    edge_clip(ee)%int_seg_type(kk) = 3
-                elseif (edge_clip(ee)%int_inout(kk-1)(1:1) == 'o') then !exit from external -> warn (keep state)
-                    edge_clip(ee)%int_seg_type(kk) = 2
+        do kk=2,edge_clip_vm(ee)%nint+1
+            if (edge_clip_vm(ee)%int_seg_type(kk-1) == 2) then !currently external
+                if (edge_clip_vm(ee)%int_inout(kk-1)(1:1) == 'i') then !entry -> current segment internal
+                    edge_clip_vm(ee)%int_seg_type(kk) = 3
+                elseif (edge_clip_vm(ee)%int_inout(kk-1)(1:1) == 'o') then !exit from external -> warn (keep state)
+                    edge_clip_vm(ee)%int_seg_type(kk) = 2
                     print *, '** warning: edge exiting geometry from external state '
+                    print '(A,I0)', '========== edge = ',ee
+                    print '(A,I0)', 'nint = ',edge_clip_vm(ee)%nint
+                    do ff=1,edge_clip_vm(ee)%nint
+                        print *,'intloc = ',edge_clip_vm(ee)%intloc(ff,:)
+                        stri = edge_clip_vm(ee)%surfseg(ff)
+                        print *, stri
+                        vf1 = surface_mesh%connectivity(stri,1)
+                        vf2 = surface_mesh%connectivity(stri,2)
+                        vf3 = surface_mesh%connectivity(stri,3)
+                        int_type = line_tri_intersect_type(volume_mesh_full%vtx(ev1,:),&
+                        volume_mesh_full%vtx(ev2,:),&
+                        surface_mesh%vertices(vf1,:),&
+                        surface_mesh%vertices(vf2,:),&
+                        surface_mesh%vertices(vf3,:))
+                        print *,'int_type = ',int_type
+                        print *,'loc on tri = ',edge_clip_vm(ee)%int_tri_loc(ff)
+                    end do 
                     cm3dfailure = 1
-                ! elseif (edge_clip(ee)%int_inout(kk-1) == 0) then !no transition so keep state
-                !     edge_clip(ee)%int_seg_type(kk) = 2
                 end if 
-            elseif (edge_clip(ee)%int_seg_type(kk-1) == 3) then !currently internal
-                if (edge_clip(ee)%int_inout(kk-1)(1:1) == 'i') then !entry -> warn (keep state)
-                    edge_clip(ee)%int_seg_type(kk) = 3
+            elseif (edge_clip_vm(ee)%int_seg_type(kk-1) == 3) then !currently internal
+                if (edge_clip_vm(ee)%int_inout(kk-1)(1:1) == 'i') then !entry -> warn (keep state)
+                    edge_clip_vm(ee)%int_seg_type(kk) = 3
                     print *, '** warning: edge entering geometry from internal state '
+                    print '(A,I0)', '========== edge = ',ee
+                    print '(A,I0)', 'nint = ',edge_clip_vm(ee)%nint
+                    do ff=1,edge_clip_vm(ee)%nint
+                        print *,'intloc = ',edge_clip_vm(ee)%intloc(ff,:)
+                        stri = edge_clip_vm(ee)%surfseg(ff)
+                        print *, stri
+                        vf1 = surface_mesh%connectivity(stri,1)
+                        vf2 = surface_mesh%connectivity(stri,2)
+                        vf3 = surface_mesh%connectivity(stri,3)
+                        int_type = line_tri_intersect_type(volume_mesh_full%vtx(ev1,:),&
+                        volume_mesh_full%vtx(ev2,:),&
+                        surface_mesh%vertices(vf1,:),&
+                        surface_mesh%vertices(vf2,:),&
+                        surface_mesh%vertices(vf3,:))
+                        print *,'int_type = ',int_type
+                        print *,'loc on tri = ',edge_clip_vm(ee)%int_tri_loc(ff)
+                    end do 
                     cm3dfailure = 1
-                elseif (edge_clip(ee)%int_inout(kk-1)(1:1) == 'o') then !exit from internal ->  current segment external
-                    edge_clip(ee)%int_seg_type(kk) = 2
+                elseif (edge_clip_vm(ee)%int_inout(kk-1)(1:1) == 'o') then !exit from internal ->  current segment external
+                    edge_clip_vm(ee)%int_seg_type(kk) = 2
                 ! elseif (edge_clip(ee)%int_inout(kk-1) == 0) then !no transition so keep state
                 !     edge_clip(ee)%int_seg_type(kk) = 3
                 end if 
@@ -3701,6 +4378,9 @@ do ff=1,volume_mesh%nface
 end do 
 
 !Build edges 
+if (allocated(vmf_edges)) then 
+    deallocate(vmf_edges)
+end if 
 allocate(vmf_edges(nedge,2))
 vmf_edges(:,:) = 0 
 do ff=1,volume_mesh%nface
@@ -3808,12 +4488,13 @@ type(vol_mesh_data) :: volume_mesh_full
 
 !Variables - Local 
 integer(in) :: cc,ff,ee,vv
-integer(in) :: nvtx_face,cl_face,cr_face,fidx,exist,edge_idx,pidx
+integer(in) :: nvtx_face,cl_face,cr_face,fidx,exist,edge_idx,pidx,maxDR,testDR,max_nevtx
 integer(in) :: cadj,fop,nface,ncell,cadj_valid,vc1,vc2,cedge,Nsubcedge_vtx,etgt_adj,ctgt_adj,fadj,vselect,vins,etgt
 integer(in) :: fopposite(6),ediagonal(12),edges(12,2),faces(6,4),face2edge(6,4),edge2face(12,2),edgeop_overface(12,2)
 integer(in) :: cell_index(ot_mesh%cins-1),face_index(ot_mesh%cins-1,6),edge_nvtx(4)
-integer(in) :: subcedge_vtx_visit(cm3dopt%NintEmax),subcedge_vtx(cm3dopt%NintEmax,3),edge_vtx_odr(cm3dopt%NintEmax,4) !SET SIZE BASED ON MAXIMUM ADJACENCY DELTA_R
-real(dp) :: subcedge_vtx_dist(cm3dopt%NintEmax)
+integer(in), dimension(:), allocatable :: subcedge_vtx_visit
+integer(in), dimension(:,:), allocatable :: edge_vtx_odr,subcedge_vtx
+real(dp), dimension(:), allocatable :: subcedge_vtx_dist 
 
 !Define opposite faces
 fopposite(1) = 2
@@ -3967,6 +4648,30 @@ edgeop_overface(11,2) = 3
 edgeop_overface(12,1) = 10
 edgeop_overface(12,2) = 4
 
+!Find maximum refinement level delta in the octree 
+maxDR = 0 
+do cc=1,ot_mesh%cins-1
+    if (ot_mesh%cell_keep(cc) .NE. 0) then 
+        testDR = max_adjacent_dR(ot_mesh,cc)
+        if (testDR .GT. maxDR) then 
+            maxDR = testDR
+        end if 
+    end if 
+end do 
+ot_mesh%maxDR = maxDR
+max_nevtx = (2**maxDR - 1)*4
+
+!Display
+if (cm3dopt%dispt == 1) then
+    write(*,'(A,I0,A)') '    {maximum adjacent cell refinement delta = ',maxDR,'}'
+end if 
+
+!Allocate adjacency arrays based on maxDR
+allocate(subcedge_vtx_visit(max_nevtx))
+allocate(subcedge_vtx(max_nevtx,3))
+allocate(edge_vtx_odr(max_nevtx,4))
+allocate(subcedge_vtx_dist(max_nevtx))
+
 !Set maximum possible valence of each vertex in the octree
 allocate(ot_mesh%vtx_valence(ot_mesh%vins-1))
 ot_mesh%vtx_valence(:) = 0 
@@ -3982,9 +4687,11 @@ ot_mesh%nedge = 0
 allocate(ot_mesh%edge_index(ot_mesh%vins-1,ot_mesh%maxvalence))
 allocate(ot_mesh%cell2edge(ot_mesh%cins-1,12))
 allocate(ot_mesh%V2V(ot_mesh%vins-1,ot_mesh%maxvalence))
+allocate(ot_mesh%valence(ot_mesh%vins-1))
 ot_mesh%edge_index(:,:) = 0 
 ot_mesh%cell2edge(:,:) = 0 
 ot_mesh%V2V(:,:) = 0 
+ot_mesh%valence(:) = 0 
 do cc=1,ot_mesh%cins-1
     if (ot_mesh%cell_keep(cc) .NE. 0) then 
         do ee=1,12
@@ -4017,6 +4724,7 @@ do cc=1,ot_mesh%cins-1
                     if (ot_mesh%V2V(vc1,vv) == 0) then 
                         ot_mesh%V2V(vc1,vv) = vc2 
                         ot_mesh%edge_index(vc1,vv) = ot_mesh%nedge
+                        ot_mesh%valence(vc1) = ot_mesh%valence(vc1) + 1
                         exit 
                     end if 
                 end do 
@@ -4024,6 +4732,7 @@ do cc=1,ot_mesh%cins-1
                     if (ot_mesh%V2V(vc2,vv) == 0) then 
                         ot_mesh%V2V(vc2,vv) = vc1 
                         ot_mesh%edge_index(vc2,vv) = ot_mesh%nedge
+                        ot_mesh%valence(vc2) = ot_mesh%valence(vc2) + 1
                         exit 
                     end if 
                 end do 
@@ -4031,6 +4740,7 @@ do cc=1,ot_mesh%cins-1
         end do 
     end if
 end do 
+!print *, 'max ot_mesh%valence => ',maxval(ot_mesh%valence(:),1)
 
 !Build octree cell2edge
 do cc=1,ot_mesh%cins-1
@@ -4069,7 +4779,7 @@ do cc=1,ot_mesh%cins-1
 
                 !Add edge to this cell
                 ot_mesh%cell2edge(cc,ee) = edge_idx
-            elseif (edge_idx .NE. 0) then !Edge already constructed so add to edges on this cell
+            elseif (edge_idx .LT. 0) then !Edge already constructed so add to edges on this cell
                 ot_mesh%cell2edge(cc,ee) = abs(edge_idx)
             end if 
         end do 
@@ -4102,7 +4812,7 @@ end do
 allocate(ot_mesh%edge_M_vtx(ot_mesh%nedge))
 do ee=1,ot_mesh%nedge
     ot_mesh%edge_M_vtx(ee)%Nevtx = 0 
-    allocate(ot_mesh%edge_M_vtx(ee)%e_vertices(cm3dopt%NintEmax))
+    allocate(ot_mesh%edge_M_vtx(ee)%e_vertices(max_nevtx))
     ot_mesh%edge_M_vtx(ee)%e_vertices(:) = 0 
 end do 
 do cc=1,ot_mesh%cins-1
@@ -4374,88 +5084,6 @@ end subroutine build_full_mesh
 
 
 
-!Get valence subroutine ===========================
-subroutine get_vmesh_valence(valence,volume_mesh)
-implicit none 
-
-!Variables - Import 
-integer(in), dimension(:) :: valence
-type(vol_mesh_data) :: volume_mesh
-
-!Variables - Local
-integer(in) :: ff,ee,vv
-integer(in) :: e1,e2,v1,v2,vlceUB,evalid
-integer(in), dimension(:,:), allocatable :: vconnect
-
-!Find upper bound of valence
-valence(:) = 0 
-do ff=1,volume_mesh%nface
-    do ee=1,volume_mesh%faces(ff)%nvtx
-        e1 = ee 
-        e2 = mod(ee,volume_mesh%faces(ff)%nvtx) + 1
-        v1 = volume_mesh%faces(ff)%vertices(e1)
-        v2 = volume_mesh%faces(ff)%vertices(e2)
-        valence(v1) = valence(v1) + 1
-        valence(v2) = valence(v2) + 1
-    end do 
-end do 
-vlceUB = 2*maxval(valence(:))
-
-!Construct actual valence of each vertex
-allocate(vconnect(volume_mesh%nvtx,vlceUB))
-valence(:) = 0
-vconnect(:,:) = 0 
-do ff=1,volume_mesh%nface
-    do ee=1,volume_mesh%faces(ff)%nvtx
-
-        !Ends of this edge
-        e1 = ee 
-        e2 = mod(ee,volume_mesh%faces(ff)%nvtx) + 1
-        v1 = volume_mesh%faces(ff)%vertices(e1)
-        v2 = volume_mesh%faces(ff)%vertices(e2)
-
-        !Check against vconnect 
-        evalid = 1
-        do vv=1,vlceUB
-            if (vconnect(v1,vv) == v2) then
-                evalid = 0
-                exit 
-            end if 
-            if (vconnect(v2,vv) == v1) then 
-                evalid = 0
-                exit 
-            end if 
-        end do 
-
-        !Add valence if new edge
-        if (evalid == 1) then 
-            
-            !Increment valence on each vertex
-            valence(v1) = valence(v1) + 1
-            valence(v2) = valence(v2) + 1
-
-            !Update vconnect
-            do vv=1,vlceUB
-                if (vconnect(v1,vv) == 0) then 
-                    vconnect(v1,vv) = v2
-                    exit
-                end if 
-            end do 
-            do vv=1,vlceUB
-                if (vconnect(v2,vv) == 0) then 
-                    vconnect(v2,vv) = v1
-                    exit 
-                end if 
-            end do 
-        end if 
-    end do 
-end do 
-return 
-end subroutine get_vmesh_valence
-
-
-
-
 !Append edge intersect subroutine ===========================
 subroutine append_edge_clip_entry(edge_clip,lenN,etgt)
 implicit none 
@@ -4466,35 +5094,66 @@ type(edgeint), dimension(:), allocatable :: edge_clip
 
 !Variables - Local
 integer(in) :: vtx_idxT(edge_clip(etgt)%nitem)
-integer(in) :: nfintT(edge_clip(etgt)%nitem)
+integer(in) :: nfintT(edge_clip(etgt)%nitem),surfsegT(edge_clip(etgt)%nitem)
 integer(in) :: vmfaceT(edge_clip(etgt)%nitem,8)
 real(dp) :: intlocT(edge_clip(etgt)%nitem,3)
+character(len=2) :: int_tri_loc(edge_clip(etgt)%nitem)
+
 
 !Store data for the edge etgt
-intlocT(:,:) = edge_clip(etgt)%intloc(:,:)
-vtx_idxT(:) = edge_clip(etgt)%vtx_idx(:)
-vmfaceT(:,:) = edge_clip(etgt)%vmface(:,:)
-nfintT(:) = edge_clip(etgt)%nfint(:)
+if (edge_clip(etgt)%nitem .GT. 0) then 
+    intlocT(:,:) = edge_clip(etgt)%intloc(:,:)
+    vtx_idxT(:) = edge_clip(etgt)%vtx_idx(:)
+    vmfaceT(:,:) = edge_clip(etgt)%vmface(:,:)
+    nfintT(:) = edge_clip(etgt)%nfint(:)
+    int_tri_loc(:) = edge_clip(etgt)%int_tri_loc(:)
+    surfsegT(:) = edge_clip(etgt)%surfseg(:)
+end if 
 
 !Allocate new arrays 
-deallocate(edge_clip(etgt)%intloc)
-deallocate(edge_clip(etgt)%vtx_idx)
-deallocate(edge_clip(etgt)%vmface)
-deallocate(edge_clip(etgt)%nfint)
+if (allocated(edge_clip(etgt)%intloc)) then 
+    deallocate(edge_clip(etgt)%intloc)
+end if 
+if (allocated(edge_clip(etgt)%vtx_idx)) then 
+    deallocate(edge_clip(etgt)%vtx_idx)
+end if 
+if (allocated(edge_clip(etgt)%vmface)) then 
+    deallocate(edge_clip(etgt)%vmface)
+end if 
+if (allocated(edge_clip(etgt)%nfint)) then 
+    deallocate(edge_clip(etgt)%nfint)
+end if 
+if (allocated(edge_clip(etgt)%int_tri_loc)) then 
+    deallocate(edge_clip(etgt)%int_tri_loc)
+end if 
+if (allocated(edge_clip(etgt)%intfrac)) then 
+    deallocate(edge_clip(etgt)%intfrac)
+end if
+if (allocated(edge_clip(etgt)%surfseg)) then 
+    deallocate(edge_clip(etgt)%surfseg)
+end if
 allocate(edge_clip(etgt)%intloc(lenN,3))
 allocate(edge_clip(etgt)%vtx_idx(lenN))
 allocate(edge_clip(etgt)%vmface(lenN,8))
 allocate(edge_clip(etgt)%nfint(lenN))
+allocate(edge_clip(etgt)%int_tri_loc(lenN))
+allocate(edge_clip(etgt)%intfrac(lenN))
+allocate(edge_clip(etgt)%surfseg(lenN))
 
 !Store data in the new structure 
-edge_clip(etgt)%intloc(1:edge_clip(etgt)%nitem,:) = intlocT(:,:) 
-edge_clip(etgt)%vtx_idx(1:edge_clip(etgt)%nitem) = vtx_idxT(:)  
-edge_clip(etgt)%vmface(1:edge_clip(etgt)%nitem,:) = vmfaceT(:,:)  
-edge_clip(etgt)%nfint(1:edge_clip(etgt)%nitem) = nfintT(:) 
+if (edge_clip(etgt)%nitem .GT. 0) then 
+    edge_clip(etgt)%intloc(1:edge_clip(etgt)%nitem,:) = intlocT(:,:) 
+    edge_clip(etgt)%vtx_idx(1:edge_clip(etgt)%nitem) = vtx_idxT(:)  
+    edge_clip(etgt)%vmface(1:edge_clip(etgt)%nitem,:) = vmfaceT(:,:)  
+    edge_clip(etgt)%nfint(1:edge_clip(etgt)%nitem) = nfintT(:) 
+    edge_clip(etgt)%int_tri_loc(1:edge_clip(etgt)%nitem) = int_tri_loc(:)
+    edge_clip(etgt)%surfseg(1:edge_clip(etgt)%nitem) = surfsegT(:)
+end if 
 edge_clip(etgt)%intloc(edge_clip(etgt)%nitem+1:lenN,:) = 0.0d0
 edge_clip(etgt)%vtx_idx(edge_clip(etgt)%nitem+1:lenN) = 0
 edge_clip(etgt)%vmface(edge_clip(etgt)%nitem+1:lenN,:) = 0
 edge_clip(etgt)%nfint(edge_clip(etgt)%nitem+1:lenN) = 0
+edge_clip(etgt)%surfseg(edge_clip(etgt)%nitem+1:lenN) = 0
 
 !Update size of this entry
 edge_clip(etgt)%nitem = lenN
@@ -4560,6 +5219,61 @@ tri_clip(ftgt)%intloc(tri_clip(ftgt)%nitem+1:lenN,:) = 0.0d0
 tri_clip(ftgt)%nitem = lenN
 return 
 end subroutine append_tri_clip_entry
+
+
+
+
+!Append smvm_pint subroutine ===========================
+subroutine append_smvm_pint_entry(smvm_pint,etgt,lenN)
+implicit none
+
+!Variables - Import
+integer(in) :: etgt,lenN
+type(smvmintlist), dimension(:) :: smvm_pint
+
+!Variables - local 
+integer(in) :: facesT(smvm_pint(etgt)%nentry)
+integer(in) :: fint_vm_edgeT(smvm_pint(etgt)%nentry)
+integer(in) :: fint_intersect_invalidT(smvm_pint(etgt)%nentry)
+real(dp) :: fint_int_locT(smvm_pint(etgt)%nentry,3)
+character(len=2) :: fint_vm_locT(smvm_pint(etgt)%nentry),fint_sm_locT(smvm_pint(etgt)%nentry)
+
+!Store data
+facesT(:) = smvm_pint(etgt)%faces(:)
+fint_vm_edgeT(:) = smvm_pint(etgt)%fint_vm_edge(:)
+fint_vm_locT(:) = smvm_pint(etgt)%fint_vm_loc(:)
+fint_sm_locT(:) = smvm_pint(etgt)%fint_sm_loc(:)
+fint_intersect_invalidT(:) = smvm_pint(etgt)%fint_intersect_invalid(:)
+fint_int_locT(:,:) = smvm_pint(etgt)%fint_int_loc(:,:)
+
+!Reallocate and resize
+deallocate(smvm_pint(etgt)%faces)
+deallocate(smvm_pint(etgt)%fint_vm_edge)
+deallocate(smvm_pint(etgt)%fint_vm_loc)
+deallocate(smvm_pint(etgt)%fint_sm_loc)
+deallocate(smvm_pint(etgt)%fint_intersect_invalid)
+deallocate(smvm_pint(etgt)%fint_int_loc)
+allocate(smvm_pint(etgt)%faces(lenN))
+allocate(smvm_pint(etgt)%fint_vm_edge(lenN))
+allocate(smvm_pint(etgt)%fint_vm_loc(lenN))
+allocate(smvm_pint(etgt)%fint_sm_loc(lenN))
+allocate(smvm_pint(etgt)%fint_intersect_invalid(lenN))
+allocate(smvm_pint(etgt)%fint_int_loc(lenN,3))
+
+!Update data
+smvm_pint(etgt)%faces(1:smvm_pint(etgt)%nentry) = facesT(:)
+smvm_pint(etgt)%faces(smvm_pint(etgt)%nentry+1:lenN) = 0 
+smvm_pint(etgt)%fint_vm_edge(1:smvm_pint(etgt)%nentry) = fint_vm_edgeT(:)
+smvm_pint(etgt)%fint_vm_edge(smvm_pint(etgt)%nentry+1:lenN) = 0 
+smvm_pint(etgt)%fint_vm_loc(1:smvm_pint(etgt)%nentry) = fint_vm_locT(:)
+smvm_pint(etgt)%fint_sm_loc(1:smvm_pint(etgt)%nentry) = fint_sm_locT(:)
+smvm_pint(etgt)%fint_intersect_invalid(1:smvm_pint(etgt)%nentry) = fint_intersect_invalidT(:)
+smvm_pint(etgt)%fint_intersect_invalid(smvm_pint(etgt)%nentry+1:lenN) = 0 
+smvm_pint(etgt)%fint_int_loc(1:smvm_pint(etgt)%nentry,:) = fint_int_locT(:,:)
+smvm_pint(etgt)%fint_int_loc(smvm_pint(etgt)%nentry+1:lenN,:) = 0.0d0 
+smvm_pint(etgt)%nentry = lenN
+return 
+end subroutine append_smvm_pint_entry
 
 
 
@@ -4690,6 +5404,29 @@ if (fexist == 1) then
 end if 
 return 
 end subroutine remove_surfedge_intersection_fref
+
+
+
+
+!Flip mesh face function ===========================
+function flip_face(Nvtx,face_initial) result(face_flipped)
+implicit none 
+
+!Variables - Import 
+integer(in) :: Nvtx
+integer(in) :: face_flipped(Nvtx)
+integer(in) :: face_initial(Nvtx)
+
+!Variables - Local 
+integer(in) :: vv,vc
+
+!Flip face
+do vv=1,Nvtx
+    vc = Nvtx - vv + 1
+    face_flipped(vv) = face_initial(vc)
+end do 
+return 
+end function flip_face
 
 
 end module cellmesh3d_mesh_build_mod

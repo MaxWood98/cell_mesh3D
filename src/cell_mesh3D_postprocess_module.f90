@@ -2,14 +2,13 @@
 !Max Wood - mw16116@bristol.ac.uk
 !Univeristy of Bristol - Department of Aerospace Engineering
 
-!Version 2.2
-!Updated 03-08-2023
+!Version 3.0
+!Updated 17-10-2023
 
 !Module
 module cellmesh3d_postprocess_mod
-! use cellmesh3d_data_mod
-! use cellmesh3d_geometry_mod
 use cellmesh3d_mesh_build_mod
+use cellmesh3d_connectivity_mod
 use ieee_arithmetic, only: ieee_value,IEEE_POSITIVE_INF
 contains 
 
@@ -163,15 +162,11 @@ type(vol_mesh_data) :: volume_mesh
 
 !Variables - Local 
 integer(in) :: ff,ee,cc,ii,jj
-integer(in) :: nedge,cl,cr,maxcface,maxeface,etgt,fbase,ftgt,nftag,nbisect,ncellN,fsurf,hassubfaces
+integer(in) :: cl,cr,maxcface,maxeface,etgt,fbase,ftgt,nftag,nbisect,ncellN,fsurf,hassubfaces,nupdate
 integer(in) :: cellnface(volume_mesh%ncell),cell_tag(volume_mesh%nface)
 integer(in) :: cell_levelN(2*volume_mesh%ncell)
 integer(in), dimension(:), allocatable :: edgenface
-integer(in), dimension(:,:), allocatable :: vmf_edges,cell2face,edge2face
-
-!Build complete volume mesh edges 
-call build_vmesh_edges(nedge,vmf_edges,volume_mesh,20_in)
-allocate(edgenface(nedge))
+integer(in), dimension(:,:), allocatable :: cell2face,edge2face
 
 !Build cell2face
 cellnface(:) = 0 
@@ -203,6 +198,7 @@ do ff=1,volume_mesh%nface
 end do 
 
 !Build edge2face 
+allocate(edgenface(volume_mesh%nedge))
 edgenface(:) = 0 
 do ff=1,volume_mesh%nface
     do ee=1,volume_mesh%faces(ff)%nvtx
@@ -211,7 +207,7 @@ do ff=1,volume_mesh%nface
     end do 
 end do 
 maxeface = maxval(edgenface)
-allocate(edge2face(nedge,maxeface))
+allocate(edge2face(volume_mesh%nedge,maxeface))
 edgenface(:) = 0 
 edge2face(:,:) = 0 
 do ff=1,volume_mesh%nface
@@ -229,7 +225,7 @@ ncellN = volume_mesh%ncell
 cell_levelN(1:volume_mesh%ncell) = volume_mesh%cell_level(:)
 do cc=1,volume_mesh%ncell
     
-    !If cell intersects the surface 
+    !Check if cell intersects the surface 
     fsurf = 0 
     do ii=1,cellnface(cc)
         ftgt = cell2face(cc,ii)
@@ -238,12 +234,15 @@ do cc=1,volume_mesh%ncell
             exit 
         end if 
     end do 
+
+    !If cell intersects the surface 
     if (fsurf == 1) then 
 
         !Flood all faces in this cell from the first 
         nftag = 1
         cell_tag(cell2face(cc,1)) = 1
         do ii=1,cellnface(cc) !Flood iteration
+            nupdate = 0
             do jj=1,cellnface(cc) !Loop all faces
                 if (cell_tag(cell2face(cc,jj)) == 1) then !Flood tag to adjacent vertices in this cell along edges that border this cell 
                     
@@ -265,12 +264,17 @@ do cc=1,volume_mesh%ncell
                                 if ((cl == cc) .OR. (cr == cc)) then 
                                     cell_tag(ftgt) = 1
                                     nftag = nftag + 1
+                                    nupdate = nupdate + 1
+                                    exit 
                                 end if  
                             end if
                         end do 
                     end do 
                 end if
             end do 
+            if (nupdate == 0) then 
+                exit 
+            end if 
         end do 
 
         !Flood from any tagged sub faces if any are present 
@@ -296,6 +300,7 @@ do cc=1,volume_mesh%ncell
 
             !Flood state though from the tagged sub faces
             do ii=1,cellnface(cc) !Flood iteration
+                nupdate = 0 
                 do jj=1,cellnface(cc) !Loop all faces
                     if (cell_tag(cell2face(cc,jj)) == 1) then !Flood tag to adjacent vertices in this cell along edges that border this cell 
                         
@@ -317,12 +322,17 @@ do cc=1,volume_mesh%ncell
                                     if ((cl == cc) .OR. (cr == cc)) then 
                                         cell_tag(ftgt) = 1
                                         nftag = nftag + 1
+                                        nupdate = nupdate + 1
+                                        exit 
                                     end if  
                                 end if
                             end do 
                         end do 
                     end if
                 end do 
+                if (nupdate == 0) then 
+                    exit 
+                end if 
             end do 
         end if 
 
@@ -348,7 +358,7 @@ do cc=1,volume_mesh%ncell
                     end if 
                 end if 
             end do 
-            ! print *, 'cell bisected ',cc ,' -- ',nftag,' / ',cellnface(cc)
+            !print *, 'cell bisected ',cc ,' -- ',nftag,' / ',cellnface(cc)
         end if
 
         !Reset cell tags
@@ -479,6 +489,9 @@ if (Ncremove .NE. 0) then
     face_remove(:) = 0 
     do cc=1,volume_mesh%ncell 
         if (cell_remove(cc) == 1) then 
+
+            !print *, Cvol(cc),(2.0d0*cm3dopt%far_field_bound/(2.0d0**(volume_mesh%cell_level(cc) - 1)))**3
+
             if (Cvol(cc) == 0.0d0) then !Force merge with any adjacent cell 
 
                 !Find any valid adjacent cell to merge with 
@@ -569,6 +582,16 @@ if (Ncremove .NE. 0) then
                                                 end if 
                                             end do 
                                         end if 
+                                    end do 
+
+                                    !Check if the adjacent cell is also a surface cell and set invalid if it is 
+                                    do aa2=1,cellnface(ctgt) 
+                                        ftgta = cell2face(cc,aa)
+                                        if ((volume_mesh%faces(ftgta)%cleft == -1) .OR. &
+                                        (volume_mesh%faces(ftgta)%cright == -1)) then 
+                                            merge_invalid = 1
+                                            exit
+                                        end if
                                     end do 
 
                                     !If valid merge then select cell ctgt
@@ -739,25 +762,20 @@ type(vol_mesh_data) :: volume_mesh
 
 !Variables - Local 
 integer(in) :: cc,ff,ee,aa,vv,kk,fn,fiter
-integer(in) :: nedge_vm,maxvlnce,vtgt,etgt,ftgt,fadded,maxNsf,is_on_surf,is_in_vol,Nsurfcell,csidx,NfaceN_surf,face_ins
+integer(in) :: vtgt,etgt,ftgt,fadded,maxNsf,is_on_surf,is_in_vol,Nsurfcell,csidx,NfaceN_surf,face_ins
 integer(in) :: NfaceM,fbase,fadj,nupdate,NfaceN,NedgeinF,evalid,Nvfnew,v_current,v_new,e_current,e_new,e_new1,e_new2,NvtxN
 integer(in) :: v1,v2,v1t,v2t,ev1,ev2,fdir
-integer(in) :: valence(volume_mesh%nvtx),surf_cell_idx(volume_mesh%ncell),sface_cidx(volume_mesh%nface)
+integer(in) :: surf_cell_idx(volume_mesh%ncell),sface_cidx(volume_mesh%nface)
 integer(in) :: face_new_acc(volume_mesh%nvtx),vtxmap(volume_mesh%nvtx)
 integer(in) :: V2E_fmerge(volume_mesh%nvtx,2)
 integer(in), dimension(:), allocatable :: edge_svol,cellNsface,fmerge,edge_in_face,edge_in_face_visited,edge_fidx
-integer(in), dimension(:,:), allocatable :: cell2face,vmf_edges,E2F
+integer(in), dimension(:,:), allocatable :: cell2face,E2F
 real(dp) :: mincurv,curvtest,reflen
 real(dp) :: vertices_temp(volume_mesh%nvtx,3)
 type(face_data) :: faces_surf_new(volume_mesh%nface),faces_temp(volume_mesh%nface)
 
-!Build vmesh edges 
-call get_vmesh_valence(valence,volume_mesh)
-maxvlnce = maxval(valence(:))
-call build_vmesh_edges(nedge_vm,vmf_edges,volume_mesh,maxvlnce)
-
 !Build E2F 
-allocate(E2F(nedge_vm,6))
+allocate(E2F(volume_mesh%nedge,6))
 E2F(:,:) = 0 
 do ff=1,volume_mesh%nface 
     do ee=1,volume_mesh%faces(ff)%nvtx
@@ -779,9 +797,9 @@ do ff=1,volume_mesh%nface
 end do 
 
 !Tag all surface edges that are also in a volume face
-allocate(edge_svol(nedge_vm))
+allocate(edge_svol(volume_mesh%nedge))
 edge_svol(:) = 0 
-do ee=1,nedge_vm
+do ee=1,volume_mesh%nedge
     is_in_vol = 0 
     is_on_surf = 0 
     do aa=1,6
@@ -879,7 +897,7 @@ if (cm3dopt%surf_force_simplify == 0) then
 
             !If minimum curvature is less than the reference length then dont simplify this cell -> set negative surface index so it is not simplified 
             reflen = 2.0d0*cm3dopt%far_field_bound/(2.0d0**(volume_mesh%cell_level(cc) - 1))
-            if (mincurv .LE. reflen) then 
+            if (mincurv .LE. 2.0d0*reflen) then 
                 surf_cell_idx(cc) = -surf_cell_idx(cc) 
             end if 
         end if
@@ -890,9 +908,9 @@ end if
 NfaceN = 0 
 face_new_acc(:) = 0 
 V2E_fmerge(:,:) = 0 
-allocate(edge_fidx(nedge_vm))
-allocate(edge_in_face(nedge_vm)) 
-allocate(edge_in_face_visited(nedge_vm)) 
+allocate(edge_fidx(volume_mesh%nedge))
+allocate(edge_in_face(volume_mesh%nedge)) 
+allocate(edge_in_face_visited(volume_mesh%nedge)) 
 edge_fidx(:) = 0
 edge_in_face(:) = 0
 edge_in_face_visited(:) = 0
@@ -1046,8 +1064,8 @@ do cc=1,volume_mesh%ncell
 
             !Build v2e for these edges
             do ee=1,NedgeinF
-                v1 = vmf_edges(edge_in_face(ee),1)
-                v2 = vmf_edges(edge_in_face(ee),2)
+                v1 = volume_mesh%edges(edge_in_face(ee),1)
+                v2 = volume_mesh%edges(edge_in_face(ee),2)
                 if (V2E_fmerge(v1,1) == 0) then 
                     V2E_fmerge(v1,1) = ee 
                 else
@@ -1061,7 +1079,7 @@ do cc=1,volume_mesh%ncell
             end do 
 
             !Accumulate face 
-            v_current = vmf_edges(edge_in_face(1),1)
+            v_current = volume_mesh%edges(edge_in_face(1),1)
             e_current = 1 
             edge_in_face_visited(e_current) = 1
             Nvfnew = 1 
@@ -1083,10 +1101,10 @@ do cc=1,volume_mesh%ncell
                 edge_in_face_visited(e_new) = 1
 
                 !Find new vertex
-                if (vmf_edges(edge_in_face(e_new),1) == v_current) then 
-                    v_new = vmf_edges(edge_in_face(e_new),2) 
+                if (volume_mesh%edges(edge_in_face(e_new),1) == v_current) then 
+                    v_new = volume_mesh%edges(edge_in_face(e_new),2) 
                 else
-                    v_new = vmf_edges(edge_in_face(e_new),1) 
+                    v_new = volume_mesh%edges(edge_in_face(e_new),1) 
                 end if 
 
                 !Add new vertex to face
@@ -1101,8 +1119,8 @@ do cc=1,volume_mesh%ncell
             !Reset linking arrays
             edge_in_face_visited(1:NedgeinF) = 0 
             do ee=1,NedgeinF
-                v1 = vmf_edges(edge_in_face(ee),1)
-                v2 = vmf_edges(edge_in_face(ee),2)
+                v1 = volume_mesh%edges(edge_in_face(ee),1)
+                v2 = volume_mesh%edges(edge_in_face(ee),2)
                 V2E_fmerge(v1,:) = 0 
                 V2E_fmerge(v2,:) = 0 
             end do 
@@ -1114,10 +1132,10 @@ do cc=1,volume_mesh%ncell
             ftgt = 0 
             fdir = 0 
             do ee=1,NedgeinF
-                if ((vmf_edges(edge_in_face(ee),1) == v1) .AND. (vmf_edges(edge_in_face(ee),2) == v2)) then 
+                if ((volume_mesh%edges(edge_in_face(ee),1) == v1) .AND. (volume_mesh%edges(edge_in_face(ee),2) == v2)) then 
                     etgt = edge_in_face(ee)
                     exit 
-                elseif ((vmf_edges(edge_in_face(ee),1) == v2) .AND. (vmf_edges(edge_in_face(ee),2) == v1)) then 
+                elseif ((volume_mesh%edges(edge_in_face(ee),1) == v2) .AND. (volume_mesh%edges(edge_in_face(ee),2) == v1)) then 
                     etgt = edge_in_face(ee)
                     exit 
                 end if
@@ -1289,33 +1307,15 @@ type(cm3d_options) :: cm3dopt
 type(vol_mesh_data) :: volume_mesh
 
 !Variables - Local 
-integer(in) :: ff,vv,ee
-integer(in) :: maxvalence,face_nvtxn,nvtx_rem,nvtxN
-integer(in) :: vtx_bndry(volume_mesh%nvtx),valence(volume_mesh%nvtx),vtx_rem(volume_mesh%nvtx)
+integer(in) :: ff,vv
+integer(in) :: face_nvtxn,nvtx_rem,nvtxN
+integer(in) :: vtx_bndry(volume_mesh%nvtx),vtx_rem(volume_mesh%nvtx)
 integer(in) :: fvtx_temp(volume_mesh%nvtx),vtx_map(volume_mesh%nvtx)
 real(dp) :: vertices_temp(volume_mesh%nvtx,3)
 
-!Approximate maximum valence 
-valence(:) = 0
-do ff=1,volume_mesh%nface 
-    do vv=1,volume_mesh%faces(ff)%nvtx
-        valence(volume_mesh%faces(ff)%vertices(vv)) = valence(volume_mesh%faces(ff)%vertices(vv)) + 1
-    end do   
-end do 
-maxvalence = maxval(valence)
-
 !Build mesh edges 
-if (allocated(volume_mesh%edges)) then 
-    volume_mesh%nedge = 0 
-    deallocate(volume_mesh%edges)
-end if 
-call build_vmesh_edges(volume_mesh%nedge,volume_mesh%edges,volume_mesh,maxvalence)
-
-!Evaluate true valence 
-valence(:) = 0
-do ee=1,volume_mesh%nedge
-    valence(volume_mesh%edges(ee,:)) = valence(volume_mesh%edges(ee,:)) + 1
-end do 
+call get_vm_valence(volume_mesh%valence,volume_mesh%maxValence,volume_mesh)
+call build_vmesh_edges(volume_mesh%nedge,volume_mesh%edges,volume_mesh,volume_mesh%maxValence)
 
 !Tag surface vertices 
 vtx_bndry(:) = 0
@@ -1332,12 +1332,12 @@ nvtx_rem = 0
 vtx_rem(:) = 0 
 do vv=1,volume_mesh%nvtx
     if (surf_int == 1) then !remove surface vertices
-        if ((vtx_bndry(vv) == 1) .AND. (valence(vv) == 2)) then 
+        if ((vtx_bndry(vv) == 1) .AND. (volume_mesh%valence(vv) == 2)) then 
             vtx_rem(vv) = 1
             nvtx_rem = nvtx_rem + 1
         end if 
     elseif (surf_int == 0) then !remove volume vertices
-        if ((vtx_bndry(vv) == 0) .AND. (valence(vv) == 2)) then 
+        if ((vtx_bndry(vv) == 0) .AND. (volume_mesh%valence(vv) == 2)) then 
             vtx_rem(vv) = 1
             nvtx_rem = nvtx_rem + 1
         end if 
@@ -1399,6 +1399,69 @@ if (cm3dopt%dispt == 1) then
 end if 
 return 
 end subroutine clean_vlnc2_vertices
+
+
+
+
+!Subroutine to remove faces with no vertices ===========================
+subroutine remove_0vtx_faces(volume_mesh,cm3dopt)
+implicit none 
+
+!Variables - Import
+type(vol_mesh_data) :: volume_mesh
+type(cm3d_options) :: cm3dopt
+
+!Variables - Local 
+integer(in) :: ff
+integer(in) :: nface_zvtx,nfaceN,face_ins
+integer(in) :: face_keep(volume_mesh%nface)
+type(face_data) :: faces_temp(volume_mesh%nface)
+
+!Find faces to remove 
+nfaceN = 0 
+nface_zvtx = 0 
+face_keep(:) = 1 
+do ff=1,volume_mesh%nface
+    if (volume_mesh%faces(ff)%nvtx == 0) then 
+        face_keep(ff) = 0 
+        nface_zvtx = nface_zvtx + 1
+    else
+        nfaceN = nfaceN + 1
+    end if 
+end do 
+
+!Update volume mesh faces 
+face_ins = 0 
+do ff=1,volume_mesh%nface 
+    faces_temp(ff)%nvtx = volume_mesh%faces(ff)%nvtx
+    faces_temp(ff)%cleft = volume_mesh%faces(ff)%cleft
+    faces_temp(ff)%cright = volume_mesh%faces(ff)%cright
+    allocate(faces_temp(ff)%vertices(faces_temp(ff)%nvtx))
+    faces_temp(ff)%vertices(:) = volume_mesh%faces(ff)%vertices(:)
+    deallocate(volume_mesh%faces(ff)%vertices)
+end do 
+deallocate(volume_mesh%faces)
+allocate(volume_mesh%faces(nfaceN))
+do ff=1,volume_mesh%nface 
+    if (face_keep(ff) == 1) then !not surface face
+        face_ins = face_ins + 1
+        volume_mesh%faces(face_ins)%nvtx = faces_temp(ff)%nvtx 
+        volume_mesh%faces(face_ins)%cleft = faces_temp(ff)%cleft
+        volume_mesh%faces(face_ins)%cright = faces_temp(ff)%cright
+        allocate(volume_mesh%faces(face_ins)%vertices(volume_mesh%faces(face_ins)%nvtx))
+        allocate(volume_mesh%faces(face_ins)%edges(volume_mesh%faces(face_ins)%nvtx))
+        volume_mesh%faces(face_ins)%vertices(:) = faces_temp(ff)%vertices(:)
+        volume_mesh%faces(face_ins)%edges(:) = 0 
+    end if 
+end do 
+volume_mesh%nface = face_ins
+
+!Display 
+if (cm3dopt%dispt == 1) then
+    write(*,'(A,I0,A)') '    {removed ',nface_zvtx,' collapsed faces}'
+end if 
+return 
+end subroutine remove_0vtx_faces
 
 
 

@@ -2,8 +2,8 @@
 !Max Wood - mw16116@bristol.ac.uk
 !Univeristy of Bristol - Department of Aerospace Engineering
 
-!Version 2.1
-!Updated 16-10-2023
+!Version 3.0
+!Updated 18-10-2023
 
 !Module
 module cell_mesh3d_octree_mod
@@ -244,7 +244,7 @@ nrefineN = 0
 allocate(ot_mesh%cell_level(cm3dopt%Ncell_max))
 allocate(ot_mesh%cell_parent(cm3dopt%Ncell_max))
 allocate(ot_mesh%cell_adjacent(cm3dopt%Ncell_max,6)) !-2 = far field || -1 = object boundary || else cell index
-! allocate(ot_mesh%cell_diagonal(cm3dopt%Ncell_max,12)) !-2 = far field || -1 = object boundary || else cell index
+allocate(ot_mesh%cell_diagonal(cm3dopt%Ncell_max,12)) !-2 = far field || -1 = object boundary || else cell index
 allocate(ot_mesh%cell_vcnr(cm3dopt%Ncell_max,8))
 allocate(ot_mesh%cell_vcmid(cm3dopt%Ncell_max))
 allocate(ot_mesh%cell_vfmid(cm3dopt%Ncell_max,6))
@@ -254,7 +254,7 @@ allocate(ot_mesh%vtx(2*cm3dopt%Ncell_max,3))
 ot_mesh%cell_level(:) = 0
 ot_mesh%cell_parent(:) = 0 
 ot_mesh%cell_adjacent(:,:) = 0
-! ot_mesh%cell_diagonal(:,:) = 0
+ot_mesh%cell_diagonal(:,:) = 0
 ot_mesh%cell_vcnr(:,:) = 0
 ot_mesh%cell_vcmid(:) = 0
 ot_mesh%cell_vfmid(:,:) = 0
@@ -305,18 +305,18 @@ ot_mesh%cell_adjacent(1,3) = -2
 ot_mesh%cell_adjacent(1,4) = -2
 ot_mesh%cell_adjacent(1,5) = -2
 ot_mesh%cell_adjacent(1,6) = -2
-! ot_mesh%cell_diagonal(1,1) = -2
-! ot_mesh%cell_diagonal(1,2) = -2
-! ot_mesh%cell_diagonal(1,3) = -2
-! ot_mesh%cell_diagonal(1,4) = -2
-! ot_mesh%cell_diagonal(1,5) = -2
-! ot_mesh%cell_diagonal(1,6) = -2
-! ot_mesh%cell_diagonal(1,7) = -2
-! ot_mesh%cell_diagonal(1,8) = -2
-! ot_mesh%cell_diagonal(1,9) = -2
-! ot_mesh%cell_diagonal(1,10) = -2
-! ot_mesh%cell_diagonal(1,11) = -2
-! ot_mesh%cell_diagonal(1,12) = -2
+ot_mesh%cell_diagonal(1,1) = -2
+ot_mesh%cell_diagonal(1,2) = -2
+ot_mesh%cell_diagonal(1,3) = -2
+ot_mesh%cell_diagonal(1,4) = -2
+ot_mesh%cell_diagonal(1,5) = -2
+ot_mesh%cell_diagonal(1,6) = -2
+ot_mesh%cell_diagonal(1,7) = -2
+ot_mesh%cell_diagonal(1,8) = -2
+ot_mesh%cell_diagonal(1,9) = -2
+ot_mesh%cell_diagonal(1,10) = -2
+ot_mesh%cell_diagonal(1,11) = -2
+ot_mesh%cell_diagonal(1,12) = -2
 ot_mesh%cell_level(1) = 1
 ot_mesh%cell_parent(1) = 0 
 
@@ -441,7 +441,11 @@ do rr=1,cm3dopt%Nrefine + cm3dopt%NrefineB
     !Refine tagged cells 
     do cc=1,cins-1
         if (Qrefine(cc) == 1) then
-            call octree_cell_refine(ot_mesh,cm3dopt,cm3dfailure,fopposite,faces,edges,face2edge,face2opedge,ccadj,vins,cins,cc)
+            call octree_cell_refine(ot_mesh,cm3dopt,cm3dfailure,fopposite,faces,edges,face2edge,face2opedge,ediagonal,&
+                                    ccadj_diag,ccadj_diag_dir,ccadj,vins,cins,cc)
+            if (cm3dfailure == 1) then 
+                return 
+            end if 
         end if 
     end do 
 
@@ -550,17 +554,19 @@ end subroutine octree_mesh_refine
 
 
 !Octree refinement subroutine ===========================
-subroutine octree_cell_refine(ot_mesh,cm3dopt,cm3dfailure,fopposite,faces,edges,face2edge,face2opedge,ccadj,vins,cins,ctgt)
+subroutine octree_cell_refine(ot_mesh,cm3dopt,cm3dfailure,fopposite,faces,edges,face2edge,face2opedge,ediagonal,&
+                              ccadj_diag,ccadj_diag_dir,ccadj,vins,cins,ctgt)
 implicit none 
 
 !Variables - Import
 integer(in) :: cm3dfailure,vins,cins,ctgt 
-integer(in) :: fopposite(6),faces(6,4),edges(12,2),face2edge(6,4),face2opedge(6,4),ccadj(8,6)
+integer(in) :: fopposite(6),ediagonal(12),faces(6,4),edges(12,2),face2edge(6,4),face2opedge(6,4),ccadj(8,6)
+integer(in) :: ccadj_diag(8,12),ccadj_diag_dir(8,12)
 type(octree_data) :: ot_mesh
 type(cm3d_options) :: cm3dopt
 
 !Variables - Local 
-integer(in) :: aa,ff,ccf
+integer(in) :: aa,ff,ccf,ee
 integer(in) :: vtxCC,cadj,child_idx
 
 !Build cell centre vertex 
@@ -589,7 +595,7 @@ do aa=1,6
 end do 
 
 !Pull adjacent edge midpoint vertices 
-do ff=1,6
+do ff=1,6 !though faces
     cadj = ot_mesh%cell_adjacent(ctgt,ff)
     if (cadj .GT. 0) then 
         if (ot_mesh%cell_level(cadj) == ot_mesh%cell_level(ctgt)) then 
@@ -599,6 +605,16 @@ do ff=1,6
                     ot_mesh%cell_vemid(ctgt,face2edge(ff,aa)) = ot_mesh%cell_vemid(cadj,face2opedge(ff,aa))
                 end if 
             end do 
+        end if 
+    end if 
+end do 
+do ee=1,12 !though edges
+    cadj = ot_mesh%cell_diagonal(ctgt,ee)
+    if (cadj .GT. 0) then 
+        if (ot_mesh%cell_level(cadj) == ot_mesh%cell_level(ctgt)) then 
+            if ((ot_mesh%cell_vemid(ctgt,ee) == 0) .AND. (ot_mesh%cell_vemid(cadj,ediagonal(ee)) .NE. 0)) then 
+                ot_mesh%cell_vemid(ctgt,ee) = ot_mesh%cell_vemid(cadj,ediagonal(ee))
+            end if 
         end if 
     end if 
 end do 
@@ -650,7 +666,7 @@ do aa=1,6
 end do 
 
 !Push edge midpoint vertices
-do ff=1,6
+do ff=1,6 !though faces
     cadj = ot_mesh%cell_adjacent(ctgt,ff)
     if (cadj .GT. 0) then 
         if (ot_mesh%cell_level(cadj) == ot_mesh%cell_level(ctgt)) then 
@@ -660,6 +676,16 @@ do ff=1,6
                     ot_mesh%cell_vemid(cadj,face2opedge(ff,aa)) = ot_mesh%cell_vemid(ctgt,face2edge(ff,aa))
                 end if 
             end do 
+        end if 
+    end if 
+end do 
+do ee=1,12 !though edges
+    cadj = ot_mesh%cell_diagonal(ctgt,ee)
+    if (cadj .GT. 0) then 
+        if (ot_mesh%cell_level(cadj) == ot_mesh%cell_level(ctgt)) then 
+            if ((ot_mesh%cell_vemid(ctgt,ee) .NE. 0) .AND. (ot_mesh%cell_vemid(cadj,ediagonal(ee)) == 0)) then 
+                ot_mesh%cell_vemid(cadj,ediagonal(ee)) = ot_mesh%cell_vemid(ctgt,ee)
+            end if 
         end if 
     end if 
 end do 
@@ -819,7 +845,7 @@ end if
 
 !Set and update cell adjacency in this region 
 call set_local_adjacency(ot_mesh,ccadj,fopposite,ctgt) !through faces
-! call set_local_adjacency_diag(ot_mesh,ccadj_diag,ccadj_diag_dir,ediagonal,cc) !through edges
+call set_local_adjacency_diag(ot_mesh,ccadj_diag,ccadj_diag_dir,ediagonal,ctgt) !through edges
 
 !Flood any edge or face midpoint vertices through the new child cells
 do ccf=1,8
@@ -1255,7 +1281,7 @@ do kk=1,6
         deltaR(kk) = 0 
     end if
 end do 
-dR = maxval(deltaR(:))
+dR = maxval(abs(deltaR(:)))
 return 
 end function max_adjacent_dR
 

@@ -2,8 +2,8 @@
 !Max Wood - mw16116@bristol.ac.uk
 !Univeristy of Bristol - Department of Aerospace Engineering
 
-!Version 9.1
-!Updated 16-10-2023
+!Version 10.0
+!Updated 24-10-2023
 
 !Geometry subroutines module
 module cellmesh3d_geometry_mod
@@ -60,7 +60,7 @@ do ff=1,volume_mesh%nface
     if (Aface .NE. 0.0d0) then 
         Nfn = Nf/Aface
     else
-        print *, 'zface',ff
+        !print *, 'zface',ff
         Nfn = 0.0d0 
     end if 
     Xpf(:) = volume_mesh%vtx(volume_mesh%faces(ff)%vertices(1),:)
@@ -132,6 +132,118 @@ end subroutine ray_plane_intersection
 
 
 
+!Ray-Triangle Intersection Subroutine (watertight WOOP method) ======================
+subroutine ray_triangle_intersection(intri,iscoplanar,xi,yi,zi,u,v,w,t,Us,Vs,Ws,org,dir,vt1,vt2,vt3)
+implicit none 
+
+!Variables - Import
+integer(in) :: intri,iscoplanar
+real(dp) :: xi,yi,zi,u,v,w,t,Us,Vs,Ws
+real(dp) :: org(3),dir(3),vt1(3),vt2(3),vt3(3)
+
+!Variables - Local 
+integer(in) :: kx,ky,kz,kxt,kyt
+real(dp) :: Ax,Ay,Az,Bx,By,Bz,Cx,Cy,Cz
+real(dp) :: Sx,Sy,Sz,Ts,Det,rcpDet
+real(dp) :: A(3),B(3),C(3)
+
+!Find maximal ray direction and perform coordinate swap to make this z
+kz = maxloc(abs(dir),1)
+kx = kz + 1
+if (kx == 4) then 
+    kx = 1
+end if 
+ky = kx + 1
+if (ky == 4) then 
+    ky = 1
+end if 
+
+!Perform winding direction preserving swap of x and y coordinates
+if (dir(kz) .LT. 0) then 
+    kxt = kx
+    kyt = ky
+    kx = kyt
+    ky = kxt
+end if 
+
+!Find shear constants 
+Sx = dir(kx)/dir(kz)
+Sy = dir(ky)/dir(kz)
+Sz = 1.0d0/dir(kz)
+
+!Triangle vertices relative to the ray origin 
+A = vt1 - org
+B = vt2 - org
+C = vt3 - org
+
+!Perform shear and scale of triangle vertices 
+Ax = A(kx) - Sx*A(kz)
+Ay = A(ky) - Sy*A(kz)
+Bx = B(kx) - Sx*B(kz)
+By = B(ky) - Sy*B(kz)
+Cx = C(kx) - Sx*C(kz)
+Cy = C(ky) - Sy*C(kz)
+
+!Find sclaed barycentric coordinates of the intersection location 
+Us = Cx*By - Cy*Bx
+Vs = Ax*Cy - Ay*Cx
+Ws = Bx*Ay - By*Ax
+
+!Calculate determinant 
+Det = Us + Vs + Ws
+
+!Check for triangle containement 
+if (((Us .LT. 0.0d0) .OR. (Vs .LT. 0.0d0) .OR. (Ws .LT. 0.0d0)) .AND. &
+((Us .GT. 0.0d0) .OR. (Vs .GT. 0.0d0) .OR. (Ws .GT. 0.0d0))) then 
+    intri = 0
+else
+    intri = 1
+end if 
+
+!Flag if coplanar 
+if (Det == 0.0d0) then 
+    iscoplanar = 1
+else
+    iscoplanar = 0
+end if 
+
+!Calculate actual properties if not coplanar
+if (iscoplanar == 0) then  
+
+    !Find scaled z coordinates for hit distance 
+    Az = Sz*A(kz)
+    Bz = Sz*B(kz)
+    Cz = Sz*C(kz)
+    Ts = Us*Az + Vs*Bz + Ws*Cz
+    
+    !Normalise to actual barycentric coordinates and hit distance 
+    rcpDet = 1.0d0/Det
+    u = Us*rcpDet
+    v = Vs*rcpDet
+    w = Ws*rcpDet
+    t = Ts*rcpDet
+    
+    !Find actual hit location 
+    xi = u*vt1(1) + v*vt2(1) + w*vt3(1)
+    yi = u*vt1(2) + v*vt2(2) + w*vt3(2)
+    zi = u*vt1(3) + v*vt2(3) + w*vt3(3)
+else
+    
+    !Set nan return 
+    u = ieee_value(1.0d0,IEEE_QUIET_NAN)
+    v = ieee_value(1.0d0,IEEE_QUIET_NAN)
+    w = ieee_value(1.0d0,IEEE_QUIET_NAN)
+    t = ieee_value(1.0d0,IEEE_QUIET_NAN)
+    xi = ieee_value(1.0d0,IEEE_QUIET_NAN)
+    yi = ieee_value(1.0d0,IEEE_QUIET_NAN)
+    zi = ieee_value(1.0d0,IEEE_QUIET_NAN)
+end if 
+return 
+end subroutine ray_triangle_intersection
+
+
+
+
 !Line-triangle intersection bool function ===========================
 function line_tri_intersect_bool(vl1,vl2,vt1,vt2,vt3) result(int_bool)
 implicit none 
@@ -141,15 +253,15 @@ integer(in) :: int_bool
 real(dp) :: vl1(3),vl2(3),vt1(3),vt2(3),vt3(3)
 
 !Variables - Local 
-character(len=1) int_state
+character(len=2) :: int_location_on_tri
 integer(in) :: in_triangle,in_line 
 
-!Check if within triangle 
-int_state = line_tri_intersect_state(vl1,vl2,vt1,vt2,vt3)
-if (int_state .NE. 'o') then 
+!Classify intersection state with the triangle 
+int_location_on_tri = line_tri_intersect_state(vl1,vl2,vt1,vt2,vt3)
+if (int_location_on_tri .NE. 'ot') then 
     in_triangle = 1
 else
-    in_triangle = 0 
+    in_triangle = 0
 end if 
 
 !Check if within line 
@@ -168,86 +280,30 @@ end function line_tri_intersect_bool
 
 
 !Line-triangle intersection state function ===========================
-function line_tri_intersect_state(vl1,vl2,vt1,vt2,vt3) result(int_state)
+function line_tri_intersect_state(vl1,vl2,vt1,vt2,vt3) result(vtx_loc)
 implicit none 
 
 !Variables - Import
-character(len=1) int_state
+character(len=2) :: vtx_loc
 real(dp) :: vl1(3),vl2(3),vt1(3),vt2(3),vt3(3)
 
 !Variables - Local 
-integer(in) :: Nvzero,Eqsigns
-integer(in) :: iszero(3)
-real(dp) :: vol1,vol2,vol3
+integer(in) :: intri,iscoplanar
+real(dp) :: xi,yi,zi,u,v,w,t,Us,Vs,Ws
+real(dp) :: org(3),dir(3)
 
-!Volumes of the three line-triangle tetraheda
-vol1 = tetrahedra_volume_x6(vl1,vt1,vt2,vl2)
-vol2 = tetrahedra_volume_x6(vl1,vt2,vt3,vl2)
-vol3 = tetrahedra_volume_x6(vl1,vt3,vt1,vl2)
+!Set ray parameters 
+org(:) = vl1(:)
+dir(:) = vl2(:) - vl1(:)
 
-!Find number of zero volumes 
-Nvzero = 0 
-iszero(:) = 0 
-if (abs(vol1) == 0.0d0) then 
-    Nvzero = Nvzero + 1
-    iszero(1) = 1
-end if
-if (abs(vol2) == 0.0d0) then 
-    Nvzero = Nvzero + 1
-    iszero(2) = 1
-end if
-if (abs(vol3) == 0.0d0) then 
-    Nvzero = Nvzero + 1
-    iszero(3) = 1
-end if 
+!Find intersection
+call ray_triangle_intersection(intri,iscoplanar,xi,yi,zi,u,v,w,t,Us,Vs,Ws,org,dir,vt1,vt2,vt3)
 
-!Check if the signs of all vol1 vol2 vol3 are equal
-if (Nvzero == 0) then !no zero volumes
-    if ((sign(1.0d0,vol1) .LT. 0.0d0) .AND. (sign(1.0d0,vol2) .LT. 0.0d0) .AND. (sign(1.0d0,vol3) .LT. 0.0d0)) then 
-        Eqsigns = 1
-    elseif ((sign(1.0d0,vol1) .GT. 0.0d0) .AND. (sign(1.0d0,vol2) .GT. 0.0d0) .AND. (sign(1.0d0,vol3) .GT. 0.0d0)) then 
-        Eqsigns = 1
-    else
-        Eqsigns = 0
-    end if 
-elseif (Nvzero == 1) then !one zero volume -> within triangle if the edge with zero volume spans the plane formed by the line and the remaining triangle vertex
-    if (iszero(1) == 1) then 
-        if ((sign(1.0d0,vol2) == sign(1.0d0,vol3)) .AND. (line_tri_span_bool(vt1,vt2,vl1,vl2,vt3) == 1)) then 
-            Eqsigns = 1
-        else
-            Eqsigns = 0
-        end if 
-    elseif (iszero(2) == 1) then 
-        if ((sign(1.0d0,vol1) == sign(1.0d0,vol3)) .AND. (line_tri_span_bool(vt2,vt3,vl1,vl2,vt1) == 1)) then 
-            Eqsigns = 1
-        else
-            Eqsigns = 0
-        end if 
-    elseif (iszero(3) == 1) then 
-        if ((sign(1.0d0,vol1) == sign(1.0d0,vol2)) .AND. (line_tri_span_bool(vt3,vt1,vl1,vl2,vt2) == 1)) then 
-            Eqsigns = 1
-        else
-            Eqsigns = 0
-        end if 
-    end if 
-elseif (Nvzero == 2) then !two zero volumes -> must pass exactly through one vertex of the triangle 
-    Eqsigns = 1
-    !print *, '2zv'
-else !all zero volume -> segment is in plane with the triangle 
-    Eqsigns = 0 
-end if 
-
-!Set intersection state 
-if (Eqsigns == 1) then !within triangle 
-    if (Nvzero == 0) then !fully within 
-        int_state = 'i'
-    elseif (Nvzero == 1) then !on an edge 
-        int_state = 'e'
-    else !on a vertex 
-        int_state = 'v'
-    end if 
-else !outside triangle 
-    int_state = 'o'
+!Classify location 
+if ((intri == 1) .AND. (iscoplanar == 0))then 
+    vtx_loc = 'in'
+else
+    vtx_loc = 'ot'
 end if 
 return 
 end function line_tri_intersect_state
@@ -398,25 +454,26 @@ real(dp) :: vint(3)
 real(dp) :: vl1(3),vl2(3),vt1(3),vt2(3),vt3(3)
 
 !Variables - Local 
-real(dp) :: Xi,Yi,Zi,u,v,ti
-real(dp) :: O(3),D(3)
+integer(in) :: intri,iscoplanar
+real(dp) :: xi,yi,zi,u,v,w,t,Us,Vs,Ws
+real(dp) :: org(3),dir(3)
 
 !Set ray parameters 
-O(:) = vl1(:)
-D(:) = vl2(:) - vl1(:)
+org(:) = vl1(:)
+dir(:) = vl2(:) - vl1(:)
 
 !Find intersection
-call ray_plane_intersection(Xi,Yi,Zi,u,v,ti,O,D,vt1,vt2,vt3)
+call ray_triangle_intersection(intri,iscoplanar,xi,yi,zi,u,v,w,t,Us,Vs,Ws,org,dir,vt1,vt2,vt3)
 
 !Store
-vint(1) = Xi
-vint(2) = Yi
-vint(3) = Zi
+vint(1) = xi
+vint(2) = yi
+vint(3) = zi
 
 !Bound within line 
-if (ti .GT. 1.0d0) then 
+if (t .GT. 1.0d0) then 
     vint(:) = vl2(:)
-elseif (ti .LT. 0.0d0) then 
+elseif (t .LT. 0.0d0) then 
     vint(:) = vl1(:)
 end if 
 return 
@@ -434,20 +491,21 @@ real(dp) :: bcint(3)
 real(dp) :: vl1(3),vl2(3),vt1(3),vt2(3),vt3(3)
 
 !Variables - Local 
-real(dp) :: Xi,Yi,Zi,u,v,ti
-real(dp) :: O(3),D(3)
+integer(in) :: intri,iscoplanar
+real(dp) :: xi,yi,zi,u,v,w,t,Us,Vs,Ws
+real(dp) :: org(3),dir(3)
 
 !Set ray parameters 
-O(:) = vl1(:)
-D(:) = vl2(:) - vl1(:)
+org(:) = vl1(:)
+dir(:) = vl2(:) - vl1(:)
 
 !Find intersection
-call ray_plane_intersection(Xi,Yi,Zi,u,v,ti,O,D,vt1,vt2,vt3)
+call ray_triangle_intersection(intri,iscoplanar,xi,yi,zi,u,v,w,t,Us,Vs,Ws,org,dir,vt1,vt2,vt3)
 
 !Store
 bcint(1) = u
 bcint(2) = v
-bcint(3) = 1.0d0 - u - v
+bcint(3) = w
 return 
 end function baryc_line_tri_intersect
 
@@ -462,26 +520,38 @@ implicit none
 character(len=2) :: vtx_loc
 real(dp) :: u,v,w,ztol
 
+!Variables - Local 
+real(dp) :: ub,lb
+
+!Set upper and lower bounds 
+ub = 1.0d0 + ztol
+lb = -ztol
+
 !Determine location (bias to vertices when nearby for safety)
-vtx_loc = 'na'
-if ((u <= -ztol) .OR. (v <= -ztol) .OR. (w <= -ztol)) then !outside triangle (in tollerance)
+if ((u <= ub) .AND. (v <= ub) .AND. (w <= ub) .AND. (u >= lb) .AND. (v >= lb) .AND. (w >= lb)) then !within bounds of internal
+    if ((u >= ztol) .AND. (v <= 2.0d0*ztol) .AND. (w <= 2.0d0*ztol)) then !vertex 1 (in tollerance)
+        vtx_loc = 'v1'
+    elseif ((u <= 2.0d0*ztol) .AND. (v >= ztol) .AND. (w <= 2.0d0*ztol)) then !vertex 2 (in tollerance)
+        vtx_loc = 'v2'
+    elseif ((u <= 2.0d0*ztol) .AND. (v <= 2.0d0*ztol) .AND. (w >= ztol)) then !vertex 3 (in tollerance)
+        vtx_loc = 'v3'
+    elseif ((u >= ztol) .AND. (v >= ztol) .AND. (w <= ztol)) then !edge (v1-v2) (in tollerance)
+        vtx_loc = 'e1'
+    elseif ((u <= ztol) .AND. (v >= ztol) .AND. (w >= ztol)) then !edge (v2-v3) (in tollerance)
+        vtx_loc = 'e2'
+    elseif ((u >= ztol) .AND. (v <= ztol) .AND. (w >= ztol)) then !edge (v3-v1) (in tollerance)
+        vtx_loc = 'e3'
+    elseif ((u >= ztol) .AND. (v >= ztol) .AND. (w >= ztol)) then !inside triangle (in tollerance)
+    ! elseif ((u >= 0.0d0) .AND. (v >= 0.0d0) .AND. (w >= 0.0d0)) then !inside triangle (exact)
+        vtx_loc = 'in'
+    elseif ((u <= -ztol) .OR. (v <= -ztol) .OR. (w <= -ztol)) then !outside triangle (in tollerance)
+    ! elseif ((u < 0.0d0) .OR. (v < 0.0d0) .OR. (w < 0.0d0)) then !outside triangle (exact)
+        vtx_loc = 'ot'
+    else
+        vtx_loc = 'uc'
+    endif 
+else 
     vtx_loc = 'ot'
-elseif ((u >= ztol) .AND. (v >= ztol) .AND. (w >= ztol)) then !inside triangle (in tollerance)
-    vtx_loc = 'in'
-elseif ((u <= 2.0d0*ztol) .AND. (v <= 2.0d0*ztol) .AND. (w >= ztol)) then !vertex 1 (in tollerance)
-    vtx_loc = 'v1'
-elseif ((u >= ztol) .AND. (v <= 2.0d0*ztol) .AND. (w <= 2.0d0*ztol)) then !vertex 2 (in tollerance)
-    vtx_loc = 'v2'
-elseif ((u <= 2.0d0*ztol) .AND. (v >= ztol) .AND. (w <= 2.0d0*ztol)) then !vertex 3 (in tollerance)
-    vtx_loc = 'v3'
-elseif ((u >= ztol) .AND. (v <= ztol) .AND. (w >= ztol)) then !edge (v1-v2) (in tollerance)
-    vtx_loc = 'e1'
-elseif ((u >= ztol) .AND. (v >= ztol) .AND. (w <= ztol)) then !edge (v2-v3) (in tollerance)
-    vtx_loc = 'e2'
-elseif ((u <= ztol) .AND. (v >= ztol) .AND. (w >= ztol)) then !edge (v3-v1) (in tollerance)
-    vtx_loc = 'e3'
-else
-    vtx_loc = 'uc'
 end if 
 return 
 end function vtx_bary_tri_loc
@@ -524,6 +594,39 @@ end function get_barycentric_coordinates
 
 
 
+!Project to barycentric coordinates function ===========================
+function project_to_barycentric(vp,vt1,vt2,vt3) result(bcint)
+implicit none 
+
+!Variables - Import
+real(dp) :: bcint(3)
+real(dp) :: vp(3),vt1(3),vt2(3),vt3(3)
+
+!Variables - Local 
+integer(in) :: intri,iscoplanar
+real(dp) :: xi,yi,zi,u,v,w,t,Us,Vs,Ws
+real(dp) :: org(3),dir(3),ntri(3)
+
+!Triangle normal 
+ntri = crossp3(vt2-vt1,vt3-vt1)
+
+!Set ray parameters 
+org(:) = vp(:)
+dir(:) = ntri(:)
+
+!Find intersection
+call ray_triangle_intersection(intri,iscoplanar,xi,yi,zi,u,v,w,t,Us,Vs,Ws,org,dir,vt1,vt2,vt3)
+
+!Store
+bcint(1) = u
+bcint(2) = v
+bcint(3) = w
+return 
+end function project_to_barycentric
+
+
+
+
 !Minimum distance point to triangle function ===========================
 function min_dist_point_to_tri(vp,vt1,vt2,vt3) result(vid)
 implicit none 
@@ -532,8 +635,8 @@ implicit none
 real(dp) :: vp(3),vt1(3),vt2(3),vt3(3),vid(4)
 
 !Variables - Local 
-integer(in) :: within_tri,mindedge
-real(dp) :: Xi,Yi,Zi,u,v,ti,baryval
+integer(in) :: within_tri,mindedge,intri,iscoplanar
+real(dp) :: xi,yi,zi,u,v,w,t,Us,Vs,Ws
 real(dp) :: O(3),D(3),Nt(3),vid_e1(4),vid_e2(4),vid_e3(4),edists(3)
 
 !Triangle normal 
@@ -544,16 +647,8 @@ O(:) = vp(:)
 D(:) = Nt(:)
 
 !Find intersection with triangle plane 
-call ray_plane_intersection(Xi,Yi,Zi,u,v,ti,O,D,vt1,vt2,vt3)
-baryval = u + v 
-within_tri = 0 
-if ((u .GE. 0.0d0) .AND. (u .LE. 1.0d0)) then 
-    if ((v .GE. 0.0d0) .AND. (v .LE. 1.0d0)) then 
-        if ((baryval .GE. 0.0d0) .AND.(baryval .LE. 1.0d0)) then 
-            within_tri = 1
-        end if 
-    end if 
-end if 
+call ray_triangle_intersection(intri,iscoplanar,xi,yi,zi,u,v,w,t,Us,Vs,Ws,O,D,vt1,vt2,vt3)
+within_tri = intri
 
 !Cases on triangle containment 
 if (within_tri == 1) then !return point and distance to point 
@@ -887,6 +982,51 @@ real(dp) :: Xpf(3),Nfn(3)
 Vface = (1.0d0/3.0d0)*Aface*dot_product(Xpf,Nfn)
 return 
 end function arbitrary_face_vol
+
+
+
+
+!Angle between vectors function ===========================
+function ang_vec2vec(vec1,vec2) result(ang)
+implicit none 
+    
+!Variables - Import
+real(dp) :: ang,vec1(3),vec2(3)
+
+!Variables - Local 
+real(dp) :: dotval
+
+!Find angle 
+dotval = dot_product(vec1,vec2)
+dotval = dotval/(norm2(vec1)*norm2(vec2))
+if (dotval .GT. 1.0d0) then 
+    dotval = 1.0d0 
+elseif (dotval .LT. -1.0d0) then 
+    dotval = -1.0d0 
+end if 
+ang = abs(acos(dotval))
+return 
+end function ang_vec2vec
+
+
+
+
+!Wendland C2 function ===========================
+function wendlandc2(d,Rs) result(W)
+implicit none 
+
+!Variables - Import
+real(dp) :: d,Rs,W
+
+!Set function value 
+d = d/Rs 
+if (d .GE. 1.0d0) then 
+    W = 0.0d0 
+else
+    W = ((1.0d0 - d)**4)*(4.0d0*d + 1.0d0)
+end if 
+return 
+end function wendlandc2
 
 
 end module cellmesh3d_geometry_mod

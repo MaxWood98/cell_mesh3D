@@ -2,8 +2,8 @@
 !Max Wood - mw16116@bristol.ac.uk
 !Univeristy of Bristol - Department of Aerospace Engineering
 
-!Version 5.1
-!Updated 01-08-2023
+!Version 6.0
+!Updated 19-10-2023
 
 !Module
 module cellmesh3d_io_mod
@@ -145,10 +145,10 @@ read(11,*) !skip
 read(11,*) cm3dopt%NintEmax
 read(11,*) !skip
 read(11,*) !skip
-read(11,*) cm3dopt%elenpad
-read(11,*) !skip
-read(11,*) !skip
 read(11,*) cm3dopt%intcointol
+read(11,*) !skip
+read(11,*) !skip
+read(11,*) cm3dopt%baryloctol
 read(11,*) !skip
 read(11,*) !skip
 read(11,*) !skip
@@ -392,6 +392,74 @@ return
 end subroutine export_volume_mesh_flux
 
 
+
+
+!Export PPoU volume-surface to surface interpolation structure ===========================
+subroutine export_vs2s_interpstruc(volume_mesh,surface_mesh,cm3dopt)
+implicit none 
+
+!Variables - Import
+type(cm3d_options) :: cm3dopt
+type(vol_mesh_data) :: volume_mesh
+type(surface_data) :: surface_mesh
+
+!Variables - Local 
+integer(in) :: vv,ii,jj
+
+!Display
+if (cm3dopt%dispt == 1) then
+    write(*,'(A)') '--> writing volume-surface to surface interpolation structure to file'
+end if 
+
+!Open 
+open(11,file=cm3dopt%iopath//'vs2s_interp') 
+
+!Write data
+write(11,'(I0,A,I0,A,I0)') surface_mesh%nvtx,' ',cm3dopt%glink_nnn,' ',cm3dopt%glink_nsmooth+1 !number of surface vertices | number of interpolation points per surface vertex | number of smoothing points per surface vertex
+write(11,'(A)') ' '
+
+!Write each interpolation structure for each surface vertex
+do vv=1,surface_mesh%nvtx
+    write(11,'(I0)') vv !surface point index 
+    write(11,'(I0,A,I0)') volume_mesh%vsinterp(vv)%npnts_vi,' ',volume_mesh%vsinterp(vv)%npnts_ss !number of unique vertices in the interpolation and smoothing structures
+    do ii=1,cm3dopt%glink_nsmooth+1 !write smoothing point list for this surface point 
+        write(11,'(I0,A)',advance='no') volume_mesh%vsinterp(vv)%surf_smooth_pnts(ii),' '
+    end do 
+    write(11,'(A)') !skip to next line 
+    do ii=1,cm3dopt%glink_nsmooth+1 !write RBF dependance for this surface point on each surface smoothing point
+        write(11,'(A,A)',advance='no') real2F0_Xstring(volume_mesh%vsinterp(vv)%surf_smoothRBF(ii),12_in),' '
+    end do 
+    write(11,'(A)') !skip to next line 
+    do ii=1,cm3dopt%glink_nnn !write volume point list for this surface point 
+        write(11,'(I0,A)',advance='no') volume_mesh%vsinterp(vv)%vol_pnts(ii),' '
+    end do 
+    write(11,'(A)') !skip to next line 
+    do ii=1,cm3dopt%glink_nnn !write RBF dependance for this surface point on each volume point 
+        write(11,'(A,A)',advance='no') real2F0_Xstring(volume_mesh%vsinterp(vv)%surf2volRBF(ii),12_in),' '
+    end do 
+    write(11,'(A)') !skip to next line 
+    do ii=1,cm3dopt%glink_nnn !write interpolation matrix 
+        do jj=1,cm3dopt%glink_nnn 
+            write(11,'(A,A)',advance='no') real2F0_Xstring(volume_mesh%vsinterp(vv)%Ri(ii,jj),12_in),' '
+        end do 
+        write(11,'(A)') !skip to next line
+    end do 
+    write(11,'(A)') ' '
+end do 
+
+!Close
+close(11)
+
+!Display
+if (cm3dopt%dispt == 1) then
+    write(*,'(A)') '    {complete}'
+end if
+return 
+end subroutine export_vs2s_interpstruc
+
+
+
+
 !Write status subroutine ===========================
 subroutine export_status(cm3dopt,cm3dfailure)
 implicit none 
@@ -454,6 +522,48 @@ write(fh,*) ( max(0,volume_mesh%edge(i:min(i+nperline-1,volume_mesh%nedge),4)),N
 close(fh)
 return 
 end subroutine write_cell_dataPLT
+
+
+
+
+!F0.X format with leading zero function =========================
+function real2F0_Xstring(val,X) result(str)
+
+!Result 
+character(len=:), allocatable :: str
+
+!Variables - Import 
+character(len=10) :: frmtI
+character(len=:), allocatable :: frmt,str_I
+integer(in) :: X,len_frmt,len_str
+real(dp) :: val
+
+!Set format descriptor
+write(frmtI,'(I0)') X
+len_frmt = len_trim(frmtI)
+allocate(character(len=len_frmt) :: frmt)
+frmt = frmtI(1:len_frmt)
+frmt = frmt//')'
+frmt = '(F0.'//frmt
+
+!Allocate initial character
+allocate(character(len=4*X) :: str_I)
+
+!Write data to return charachter
+write(str_I,frmt) val
+
+!Allocate return character
+len_str = len_trim(str_I)
+allocate(character(len=len_str) :: str)
+str = str_I(1:len_str)
+
+!Assign leading zero if required
+if (str(1:1) == '.') then 
+    str = '0'//str
+elseif (str(1:2) == '-.') then 
+    str = '-0.'//str(3:len_str)
+end if 
+end function real2F0_Xstring
 
 
 end module cellmesh3d_io_mod

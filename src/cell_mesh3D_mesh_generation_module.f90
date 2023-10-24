@@ -2,8 +2,8 @@
 !Max Wood - mw16116@bristol.ac.uk
 !Univeristy of Bristol - Department of Aerospace Engineering
 
-!Version 1.1
-!Updated 16-10-2023
+!Version 1.2
+!Updated 18-10-2023
 
 !Module
 module cellmesh3d_mesh_generation_mod
@@ -13,6 +13,8 @@ use cellmesh3d_surface_mod
 use cell_mesh3d_octree_mod
 use cellmesh3d_mesh_build_mod
 use cellmesh3d_postprocess_mod
+use cellmesh3d_connectivity_mod
+use cellmesh3d_gradient_coupling_mod
 contains
 
 !cell_mesh3d meshing subroutine ================================================
@@ -34,7 +36,7 @@ real(dp) :: obj_max_x,obj_max_y,obj_max_z,obj_min_x,obj_min_y,obj_min_z,obj_cx,o
 real(dp), dimension(:,:), allocatable :: tvtx
 
 !Mesh data
-integer(in) :: MaxValence,Nmerge,Nmerge_fail,nmiter,nifail
+integer(in) :: Nmerge,Nmerge_fail,nmiter,nifail
 real(dp), dimension(:), allocatable :: Cvol
 
 !AD_Tree data
@@ -51,7 +53,7 @@ if (cm3dopt%dispt == 1) then
     write(*,'(A)')'+--------------------------------------------+'
     write(*,'(A)')'|                Cell Mesh 3D                |'
     write(*,'(A)')'|         3D Cut-Cell Mesh Generator         |'
-    write(*,'(A)')'|        Version 0.0.2 || 16/10/2023         |'
+    write(*,'(A)')'|        Version 0.1.0 || 18/10/2023         |'
     write(*,'(A)')'|                 Max Wood                   |'
     write(*,'(A)')'|           University of Bristol            |'
     write(*,'(A)')'|    Department of Aerospace Engineering     |'
@@ -60,9 +62,6 @@ if (cm3dopt%dispt == 1) then
 end if
 
 !Set hardcoded parameters -------------------------------------------------------
-!Set MaxValence parameter 
-MaxValence = 6
-
 !Set global object bounding box padding for adtree node containement
 global_target_pad = 0.0d0
 
@@ -70,7 +69,7 @@ global_target_pad = 0.0d0
 Ndim = 6
 
 !Set minimum divisible node size within the AD tree 
-node_minDIVsize = 10
+node_minDIVsize = 5
 
 !Initialise failure tag
 cm3dfailure = 0
@@ -90,7 +89,7 @@ end if
 call orient_surface(surface_mesh,cm3dopt)
 
 !Build surface mesh connectivity 
-call get_valence(surface_mesh%valence,surface_mesh%maxValence,surface_mesh%connectivity,surface_mesh%nfcs,surface_mesh%nvtx)
+call get_tri_valence(surface_mesh%valence,surface_mesh%maxValence,surface_mesh%connectivity,surface_mesh%nfcs,surface_mesh%nvtx)
 call construct_edges(surface_mesh%nedge,surface_mesh%edges,surface_mesh%valence,surface_mesh%nvtx,surface_mesh%nfcs,&
 surface_mesh%connectivity)
 call get_connectivity(surface_mesh%V2E,surface_mesh%V2F,surface_mesh%F2E,surface_mesh%E2F,surface_mesh%valence,&
@@ -142,7 +141,7 @@ do ii=1,surface_mesh%nfcs
 end do
 
 !Construct ad_tree
-call build_ADtree(surface_adtree,ndim,cm3dopt%max_depth,node_minDIVsize,tvtx,global_target_pad,cm3dopt%dispt)
+call build_ADtree(surface_adtree,Ndim,cm3dopt%max_depth,node_minDIVsize,tvtx,global_target_pad,cm3dopt%dispt)
 
 !Octree construction -------------------------------------------------------
 if (cm3dopt%dispt == 1) then
@@ -156,10 +155,6 @@ if (cm3dfailure == 1) then
 end if 
 
 !Construct volume mesh -------------------------------------------------------
-!Build mesh
-! if (cm3dopt%dispt == 1) then
-!     write(*,'(A)') '--> constructing full volume mesh: '
-! end if
 call construct_mesh(volume_mesh,ot_mesh,surface_mesh,surface_adtree,cm3dopt,cm3dfailure)
 if (cm3dfailure == 1) then 
     return 
@@ -167,11 +162,6 @@ end if
 
 !Ensure contiguous cell indecies 
 call remap_cell_indecies(volume_mesh)
-
-!Remap vertices 
-
-
-
 
 !Postprocess complete mesh ---------------------------------------------------
 ! ! !Apply custom boundary conditions conditions in target regions 
@@ -201,8 +191,12 @@ call remap_cell_indecies(volume_mesh)
 
 !Display
 if (cm3dopt%dispt == 1) then
-    write(*,'(A)') '--> cleaning volume mesh'
+    write(*,'(A)') '--> dividing bisected cells'
 end if
+
+!Build volume mesh edges 
+call get_vm_valence(volume_mesh%valence,volume_mesh%maxValence,volume_mesh)
+call build_vmesh_edges(volume_mesh%nedge,volume_mesh%edges,volume_mesh,volume_mesh%maxValence)
 
 !Check for and correct bisected cells 
 call correct_bisected_cells(volume_mesh,cm3dopt)
@@ -210,8 +204,14 @@ call correct_bisected_cells(volume_mesh,cm3dopt)
 !Remove mesh internal valence two vertices 
 call clean_vlnc2_vertices(volume_mesh,cm3dopt,0_in) 
 
+!Reconstruct edges 
+call get_vm_valence(volume_mesh%valence,volume_mesh%maxValence,volume_mesh)
+call build_vmesh_edges(volume_mesh%nedge,volume_mesh%edges,volume_mesh,volume_mesh%maxValence)
+
 !Simplify the mesh surface within each cell if simplified surface requested
 if (cm3dopt%surface_type == 0) then     
+
+    !Simplify 
     if (cm3dopt%dispt == 1) then
         write(*,'(A)') '--> constructing simplified surface geometry'
     end if
@@ -220,11 +220,21 @@ if (cm3dopt%surface_type == 0) then
     if (cm3dfailure == 1) then 
         return 
     end if 
+
+    !Remove any faces with no vertices 
+    call remove_0vtx_faces(volume_mesh,cm3dopt)
+
+    !Reconstruct edges 
+    call get_vm_valence(volume_mesh%valence,volume_mesh%maxValence,volume_mesh)
+    call build_vmesh_edges(volume_mesh%nedge,volume_mesh%edges,volume_mesh,volume_mesh%maxValence)
 end if 
 
 !Clean mesh by removing sliver cells 
 nmiter = 10 !volume_mesh%ncell !set maximum merging iterations 
 nifail = 0 
+if (cm3dopt%dispt == 1) then
+    write(*,'(A)') '--> merging sliver cells'
+end if
 do ii=1,nmiter
     call clean_mesh_sliverC(volume_mesh,Cvol,cm3dopt,Nmerge,Nmerge_fail)
     if (Nmerge_fail .NE. 0) then 
@@ -244,8 +254,8 @@ end do
 !Remap cell indecies 
 call remap_cell_indecies(volume_mesh)
 
-! ! !Build surface vertex mappings 
-! ! call build_surface_links(volume_mesh,surface_mesh)
+! !Build surface vertex mappings 
+! call build_surface_links(volume_mesh,surface_mesh)
 
 !Flip surface and boundary normals if requested (both are constructed in state 'in')
 if (cm3dopt%surface_dir == 'out') then 
@@ -264,11 +274,24 @@ if (cm3dopt%meshfrmat == 'su2_dual') then
     call construct_dual_mesh(volume_mesh)
 end if 
 
+! !Apply near surface mesh smoothing 
+! if ((cm2dopt%Nsstype == 1) .OR. (cm2dopt%meshtype == 1)) then 
+!     call nearsurf_lap_smooth(volume_mesh,cm2dopt,MaxValence)
+! end if 
+
 !Remove any zero area faces 
-call remove_zero_area_faces(volume_mesh,cm3dopt) !========================================
+call remove_zero_area_faces(volume_mesh,cm3dopt) 
 
 !Evaluate cell volumes to check for invalid cells 
 call get_cell_volumes(Cvol,volume_mesh)
+
+!Construct gradient mesh to surface coupling matrix if requeted 
+if (cm3dopt%glink_con == 1) then 
+    if (cm3dopt%dispt == 1) then
+        write(*,'(A)') '--> constructing volume-surface gradient coupling matrix'
+    end if
+    call construct_surfvol_grad_coupling(volume_mesh,surface_mesh,Ndim,node_minDIVsize,global_target_pad,cm3dopt)
+end if 
 
 !Set mesh and surface face counts
 volume_mesh%nface_surface = 0 

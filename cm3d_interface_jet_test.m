@@ -26,14 +26,14 @@ cm3dop.meshfrmat = 'cutcell';     %Mesh output format (cutcell / su2_dual)
 
 %Cut-Cell mesh options ====================================================
 %Octree options
-cm3dop.nrefine = 10;               %Maximum refinement level 
-cm3dop.nrefineB = 1;              %Maximum additional refinement levels in high curvature regions
-cm3dop.ncell_max = 1000000;       %Maximum number of cells
-cm3dop.nrflood_i = 2;             %Refinement adjacency flooding iterations at the first refinement
-cm3dop.nrflood_f = 2;             %Refinement adjacency flooding iterations at the final refinement
+cm3dop.nrefine = 8;               %Maximum refinement level 
+cm3dop.nrefineB = 0;              %Maximum additional refinement levels in high curvature regions
+cm3dop.ncell_max = 2000000;       %Maximum number of cells
+cm3dop.nrflood_i = 3;             %Refinement adjacency flooding iterations at the first refinement
+cm3dop.nrflood_f = 3;             %Refinement adjacency flooding iterations at the final refinement
 cm3dop.nrflood_b = 3;             %Refinement adjacency flooding iterations on boosted refinement
-cm3dop.fbound = 1.0;              %Far field distance from object centre  
-cm3dop.coffset = [0.0 0.77 0.0];   %Object/mesh centre offset (x / y / z)
+cm3dop.fbound = 10;              %Far field distance from object centre  
+cm3dop.coffset = [0.0 0.0 0.0];   %Object/mesh centre offset (x / y / z)
 
 %Mesh cleaning options
 cm3dop.fminarea = 1e-8;           %Minimum face area as a fraction of an undeformed cell face area at each refienemnt level 
@@ -42,7 +42,7 @@ cm3dop.cminvol = 0.01;            %Volume fraction of an undeformed cell at each
 %Mesh geometry intersection options
 cm3dop.enintmax = 10;             %Maximum number of mesh-geometry intersections on each volume mesh edge 
 cm3dop.int_coin_tol = 1e-12;      %Intersection co-incidence tollerance 
-cm3dop.bary_loc_tol = 1e-8;       %Barycentric location tollerance 
+cm3dop.bary_loc_tol = 1e-4;      %Barycentric location tollerance 
 
 %Surface format options
 cm3dop.surftype = 0;              %Geometry surface type (0 = 'simplified' | 1 = 'exact') 
@@ -130,19 +130,30 @@ hold on
 %Plot object surface 
 % patch('vertices',vertices,'faces',connectivity,'FaceColor',[1.0 0.8 0.8],'EdgeColor',[1.0 0.8 0.8],'EdgeAlpha',1.0,'FaceAlpha',1.0);
 % patch('vertices',vertices,'faces',connectivity,'FaceColor',[0.9 0.8 1.0],'EdgeColor',[0.2 0.2 0.2],'EdgeAlpha',1.0,'FaceAlpha',1.0);
-% patch('vertices',vertices,'faces',connectivity(4964,:),'FaceColor',[1.0 0.0 0.0],'EdgeAlpha',1.0,'FaceAlpha',0.5);
-% patch('vertices',vertices,'faces',connectivity(6588,:),'FaceColor',[1.0 0.0 0.0],'EdgeAlpha',1.0,'FaceAlpha',0.5);
-% patch('vertices',vertices,'faces',connectivity(6589,:),'FaceColor',[1.0 0.0 0.0],'EdgeAlpha',1.0,'FaceAlpha',0.5);
+% patch('vertices',vertices,'faces',connectivity(15516,:),'FaceColor',[1.0 0.0 0.0],'EdgeAlpha',1.0,'FaceAlpha',0.5);
+
+% patch('vertices',vertices,'faces',connectivity(7982,:),'FaceColor',[1.0 0.0 0.0],'EdgeAlpha',1.0,'FaceAlpha',1.0);
+% plot3(vertices(connectivity(7982,:),1),vertices(connectivity(7982,:),2),vertices(connectivity(7982,:),3),'r+','markersize',30)
+
 % vtgt = 360;
 % plot3(vertices(vtgt,1),vertices(vtgt,2),vertices(vtgt,3),'r+','markersize',30)
 
+% patch('vertices',vertices,'faces',connectivity(57028,:),'FaceColor',[1.0 0.0 0.0],'EdgeAlpha',1.0,'FaceAlpha',1.0);
+% patch('vertices',vertices,'faces',connectivity(2152,:),'FaceColor',[1.0 0.0 0.0],'EdgeAlpha',1.0,'FaceAlpha',1.0);
 
-% vtgt = 4055;
-% plot3(vertices(vtgt,1),vertices(vtgt,2),vertices(vtgt,3),'r.','markersize',30)
-% vtgt = 4065;
-% plot3(vertices(vtgt,1),vertices(vtgt,2),vertices(vtgt,3),'r.','markersize',30)
-% vtgts = [ 4056                 4064];
-% plot3(vertices(vtgts,1),vertices(vtgts,2),vertices(vtgts,3),'r.','markersize',30)
+% vtgt = 1106;
+% plot3(vertices(vtgt,1),vertices(vtgt,2),vertices(vtgt,3),'r+','markersize',20)
+
+% vtgt = 1166;
+% plot3(vertices(vtgt,1),vertices(vtgt,2),vertices(vtgt,3),'r+','markersize',20)
+% vtgt = 1137;
+% plot3(vertices(vtgt,1),vertices(vtgt,2),vertices(vtgt,3),'r+','markersize',20)
+% 
+% vtgt = 1136;
+% plot3(vertices(vtgt,1),vertices(vtgt,2),vertices(vtgt,3),'ro','markersize',20)
+% vtgt = 1106;
+% plot3(vertices(vtgt,1),vertices(vtgt,2),vertices(vtgt,3),'ro','markersize',20)
+
 
 
 % vertices(connectivity(15516,:),:)
@@ -436,16 +447,10 @@ patch('vertices',vertices_m,'faces',faces_int,'EdgeAlpha',1.0,'Marker','none','f
 % plot3(vtxext(:,1),vtxext(:,2),vtxext(:,3),'ro')
 
 % vm_surf_intersect_in = load('io/vm_surf_intersect_in.dat');
-% plot3(vm_surf_intersect_in(:,1),vm_surf_intersect_in(:,2),vm_surf_intersect_in(:,3),'g.','MarkerSize',10)
+% plot3(vm_surf_intersect_in(:,1),vm_surf_intersect_in(:,2),vm_surf_intersect_in(:,3),'g.','MarkerSize',20)
 % 
 % vm_surf_intersect_out = load('io/vm_surf_intersect_out.dat');
-% plot3(vm_surf_intersect_out(:,1),vm_surf_intersect_out(:,2),vm_surf_intersect_out(:,3),'r.','MarkerSize',10)
-
-% vmedgeint = load('io/vmeint.dat');
-% Neint = length(vmedgeint);
-% for ee=1:Neint
-%     plot3([vmedgeint(ee,1) vmedgeint(ee,4)],[vmedgeint(ee,2) vmedgeint(ee,5)],[vmedgeint(ee,3) vmedgeint(ee,6)],'r','linewidth',4)
-% end 
+% plot3(vm_surf_intersect_out(:,1),vm_surf_intersect_out(:,2),vm_surf_intersect_out(:,3),'r.','MarkerSize',20)
 
 % vtxp = load('io/vtx2pert.dat');
 % plot3(vtxp(:,1),vtxp(:,2),vtxp(:,3),'r*')
@@ -516,53 +521,58 @@ patch('vertices',vertices_m,'faces',faces_int,'EdgeAlpha',1.0,'Marker','none','f
 % end
 % fclose(fid);
 % Nface_m = length(faces_mt(:,1));
-% 
-% %Test plot mesh 
+
+%Test plot mesh 
 % patch('vertices',vertices_mt,'faces',faces_mt(:,:),'EdgeAlpha',1.0,'Marker','none','facecolor',[0.8 0.8 0.8],'facealpha',0.0);
-% % % patch('vertices',vertices_mt,'faces',faces_mt(611,:),'EdgeAlpha',1.0,'Marker','none','facecolor',[0.0 1.0 0.0],'facealpha',1.0);
-% % vtgt = 5791;
-% % plot3(vertices_mt(vtgt,1),vertices_mt(vtgt,2),vertices_mt(vtgt,3),'b.','markersize',30)
-% % 
-% % vtgt = 5867;
-% % plot3(vertices_mt(vtgt,1),vertices_mt(vtgt,2),vertices_mt(vtgt,3),'b.','markersize',30)
+% patch('vertices',vertices_mt,'faces',faces_mt(693079,:),'EdgeAlpha',1.0,'Marker','none','facecolor',[0.0 1.0 0.0],'facealpha',1.0);
+% patch('vertices',vertices_mt,'faces',faces_mt(693300,:),'EdgeAlpha',1.0,'Marker','none','facecolor',[0.0 0.0 1.0],'facealpha',1.0);
+
+% patch('vertices',vertices_mt,'faces',faces_mt(156417,:),'EdgeAlpha',1.0,'Marker','none','facecolor',[0.0 1.0 0.0],'facealpha',1.0);
+
+% patch('vertices',vertices_mt,'faces',faces_mt(155873,:),'EdgeAlpha',1.0,'Marker','none','facecolor',[0.0 0.0 1.0],'facealpha',0.5);
 
 
 
-% patch('vertices',vertices_mt,'faces',faces_mt(13692,:),'EdgeAlpha',1.0,'Marker','none','facecolor',[0.0 1.0 0.0],'facealpha',0.5);
+% vtgt = 1498;
+% plot3(vertices_mt(vtgt,1),vertices_mt(vtgt,2),vertices_mt(vtgt,3),'b.','markersize',30)
+
+
+
+% patch('vertices',vertices_mt,'faces',faces_mt(190400,:),'EdgeAlpha',1.0,'Marker','none','facecolor',[0.0 1.0 0.0],'facealpha',1.0);
 % 
-% patch('vertices',vertices_mt,'faces',faces_mt(92953,:),'EdgeAlpha',1.0,'Marker','none','facecolor',[0.0 1.0 0.0],'facealpha',0.5);
-% patch('vertices',vertices_mt,'faces',faces_mt(92955,:),'EdgeAlpha',1.0,'Marker','none','facecolor',[0.0 1.0 0.0],'facealpha',0.5);
-% patch('vertices',vertices_mt,'faces',faces_mt(93078,:),'EdgeAlpha',1.0,'Marker','none','facecolor',[0.0 1.0 0.0],'facealpha',0.5);
+% patch('vertices',vertices_mt,'faces',faces_mt(190401,:),'EdgeAlpha',1.0,'Marker','none','facecolor',[0.0 1.0 0.0],'facealpha',1.0);
+% 
+% patch('vertices',vertices_mt,'faces',faces_mt(190404,:),'EdgeAlpha',1.0,'Marker','none','facecolor',[0.0 1.0 0.0],'facealpha',1.0);
+% 
+% patch('vertices',vertices_mt,'faces',faces_mt(341585,:),'EdgeAlpha',1.0,'Marker','none','facecolor',[0.0 1.0 0.0],'facealpha',1.0);
+% 
+% patch('vertices',vertices_mt,'faces',faces_mt(190403,:),'EdgeAlpha',1.0,'Marker','none','facecolor',[0.0 1.0 0.0],'facealpha',1.0);
+% 
+% patch('vertices',vertices_mt,'faces',faces_mt(190426,:),'EdgeAlpha',1.0,'Marker','none','facecolor',[0.0 1.0 0.0],'facealpha',1.0);
+% 
+% 
+% patch('vertices',vertices_mt,'faces',faces_mt(341595,:),'EdgeAlpha',1.0,'Marker','none','facecolor',[0.0 1.0 0.0],'facealpha',1.0);
+% 
+% 
+% patch('vertices',vertices_mt,'faces',faces_mt(190425,:),'EdgeAlpha',1.0,'Marker','none','facecolor',[0.0 1.0 0.0],'facealpha',1.0);
+% 
+% patch('vertices',vertices_mt,'faces',faces_mt(190429,:),'EdgeAlpha',1.0,'Marker','none','facecolor',[0.0 1.0 0.0],'facealpha',1.0);
 % 
 
 
 
-% plot3(0.46875000000000000     ,   2.9924763807264894    ,   0.70625000000000004,'m.','markersize',30)
-% plot3(0.46875000000000006     ,   2.9924763083371291    ,   0.70908619166287090,'g.','markersize',20)
-
-
-
-% patch('vertices',vertices_mt,'faces',faces_mt(27223,:),'EdgeAlpha',1.0,'Marker','none','facecolor',[0.0 1.0 0.0],'facealpha',1.0);
-% patch('vertices',vertices_mt,'faces',faces_mt(27225,:),'EdgeAlpha',1.0,'Marker','none','facecolor',[0.0 1.0 0.0],'facealpha',1.0);
-% patch('vertices',vertices_mt,'faces',faces_mt(27227,:),'EdgeAlpha',1.0,'Marker','none','facecolor',[0.0 1.0 0.0],'facealpha',1.0);
-% % patch('vertices',vertices_mt,'faces',faces_mt(44338,:),'EdgeAlpha',1.0,'Marker','none','facecolor',[0.0 1.0 0.0],'facealpha',1.0);
-
-
-
-% 
-% %Plot intersects
+%Plot intersects
 % vmsint_edge = load('io/vmsint_edge.dat');
 % plot3(vmsint_edge(:,1),vmsint_edge(:,2),vmsint_edge(:,3),'b.','markersize',20)
 % 
 % vmsint_face = load('io/vmsint_face.dat');
-% plot3(vmsint_face(:,1),vmsint_face(:,2),vmsint_face(:,3),'r.','markersize',20)
+% plot3(vmsint_face(:,1),vmsint_face(:,2),vmsint_face(:,3),'ro','markersize',20)
 % 
 % vmsint_vtx = load('io/vmsint_vtx.dat');
-% plot3(vmsint_vtx(:,1),vmsint_vtx(:,2),vmsint_vtx(:,3),'go','markersize',20)
-% 
+% plot3(vmsint_vtx(:,1),vmsint_vtx(:,2),vmsint_vtx(:,3),'g.','markersize',20)
 
-
-
+% vmpushed_ints = load('io/vmedge_seint.dat');
+% plot3(vmpushed_ints(:,1),vmpushed_ints(:,2),vmpushed_ints(:,3),'g.','markersize',20)
 
 
 
@@ -631,31 +641,17 @@ patch('vertices',vertices_m,'faces',faces_int,'EdgeAlpha',1.0,'Marker','none','f
 
 
 
-% %Plot clipped face
-% face_ledge = load('io/face_cvtx.dat');
-% for ee=1:length(face_ledge(:,1))
-%     etgt = ee;
-%     plot3([face_ledge(etgt,1) face_ledge(etgt,4)],[face_ledge(etgt,2) face_ledge(etgt,5)],[face_ledge(etgt,3) face_ledge(etgt,6)],'g','linewidth',4) 
-% end
+%Plot clipped face
+face_ledge = load('io/face_cvtx.dat');
+for ee=1:length(face_ledge(:,1))
+    etgt = ee;
+    plot3([face_ledge(etgt,1) face_ledge(etgt,4)],[face_ledge(etgt,2) face_ledge(etgt,5)],[face_ledge(etgt,3) face_ledge(etgt,6)],'g','linewidth',4) 
+end
 
-
-% 
-% edg = 5;
+% edg = 1;
 % for ee=edg:edg
 %     etgt = ee;
 %     plot3([face_ledge(etgt,1) face_ledge(etgt,4)],[face_ledge(etgt,2) face_ledge(etgt,5)],[face_ledge(etgt,3) face_ledge(etgt,6)],'r','linewidth',4) 
-% end
-% 
-% edg = 6;
-% for ee=edg:edg
-%     etgt = ee;
-%     plot3([face_ledge(etgt,1) face_ledge(etgt,4)],[face_ledge(etgt,2) face_ledge(etgt,5)],[face_ledge(etgt,3) face_ledge(etgt,6)],'g','linewidth',4) 
-% end
-% 
-% edg = 7;
-% for ee=edg:edg
-%     etgt = ee;
-%     plot3([face_ledge(etgt,1) face_ledge(etgt,4)],[face_ledge(etgt,2) face_ledge(etgt,5)],[face_ledge(etgt,3) face_ledge(etgt,6)],'b','linewidth',2) 
 % end
 
 
@@ -739,8 +735,6 @@ patch('vertices',vertices_m,'faces',faces_int,'EdgeAlpha',1.0,'Marker','none','f
 % vplt = 4;
 % plot3(triclip(vplt,1),triclip(vplt,2),triclip(vplt,3),'m*','markersize',20)
 
-
-
 % plot3(1.5527000000000002  ,     -1.0495206896551722E-002  , 2.1232724137931038,'m*','markersize',20)
  
 % plot3( 2.9843750000000000      , -6.2500000000000000E-002  , 1.2031250000000000,'b.','markersize',20)
@@ -748,10 +742,12 @@ patch('vertices',vertices_m,'faces',faces_int,'EdgeAlpha',1.0,'Marker','none','f
 % plot3( 2.9062500000000000     ,  -6.2500000000000000E-002 ,  1.2031250000000000,'r.','markersize',20)
 
 
+% plot3(-1.2957282591799144E-003 ,  0.0000000000000000    ,  -0.41275847011079625,'k.','markersize',30)
 
-% plot3(0.468750000000000	,2.99247765689836	,0.656250000000000 ,'b.','markersize',30)
 
 
+% plot3(0.42357676716050002   ,   -0.22499999999999998    ,    2.6020852139652106E-018 ,'g.','markersize',20)
+% 
 % plot3(0.42357676716049997   ,   -0.22499999999999998      ,  1.8749999999999999E-002 ,'g.','markersize',20)
 
 % plot3(0.42357676716050002 ,     -0.22499999999999998     ,   2.6020852139652106E-018  ,'g.','markersize',20)
@@ -759,9 +755,17 @@ patch('vertices',vertices_m,'faces',faces_int,'EdgeAlpha',1.0,'Marker','none','f
 % plot3(0.42357676716049997    ,  -0.22499999999999998    ,    1.8749999999999999E-002 ,'g.','markersize',20)
 
 
-% plot3(0.79857676716049997    ,   -1.8749999999999999E-002  , 9.6753392285554754E-002,'mo','markersize',10)
+% plot3(12.345003999999998   ,    -1.7263703059063691E-010 , 0.70000863185152951,'m.','markersize',30)
 
 
+
+% plot3(4.1418789999999994     ,   1.9721522630525295E-031 , -0.82500000000799978,'g.','markersize',30)
+
+
+
+% plot3(11.453118878179353   ,   -0.31249705645112891    ,   0.39681900000000070,'g.','markersize',30)
+% 
+% plot3(11.453116333830106  ,   -0.31250000000000006    ,   0.39663626527570728,'m.','markersize',30)
 
 
 % 
@@ -775,13 +779,6 @@ patch('vertices',vertices_m,'faces',faces_int,'EdgeAlpha',1.0,'Marker','none','f
 
 % plot3(-8.7500000000000022E-002 ,-0.15625000000000000  ,     -6.8854323241252541E-002,'g.','markersize',20 )
 
-
-% plot3(0.19857676716050007    ,   -2.8125000000917721E-002 , -8.1622347733916176E-002,'g.','markersize',20 )
-% 
-% 
-% plot3(0.19857676716050005    ,   -3.2812500000000001E-002 , -7.9687499999999994E-002,'b.','markersize',30)
-% plot3(0.19857676716050005   ,    -2.8124999999999997E-002 , -7.4999999999999997E-002,'r.','markersize',30)
-% plot3(0.19857676716050005   ,    -2.8125000000000001E-002 , -8.4375000000000006E-002,'r.','markersize',30)
 
 
 % plot3(2.0937500000000000  ,     0.50000000000000000    ,    0.0000000000000000,'g*','markersize',20)
@@ -1014,86 +1011,36 @@ hold off
 % axis([0.3941    0.4673   -0.0732    0.0035    0.0553    0.1286]);
 
 
-% axis([12.2774   12.3775   -0.0532    0.0516    0.6567    0.7568]);
-
-% axis([0.2400    0.3568   -0.1624   -0.0546   -0.0705    0.0373])
-
-% axis([0.7194    0.7528   -0.0462   -0.0198    0.0814    0.1077]);
-
-% axis([0.7484    0.7896   -0.0934   -0.0609    0.0006    0.0331]);
-
-
-% axis([0.1968    0.2847   -0.0923   -0.0003   -0.1300   -0.0421]);
-
-% axis([0.1948    0.2290   -0.0480   -0.0122   -0.1039   -0.0698]);
-
-% axis([0.7617    0.7750    0.0618    0.0758    0.0085    0.0219]);
-
-% axis([0.7654    0.7740    0.0648    0.0738    0.0121    0.0208])
-
-% axis([0.4019    0.6556    2.8190    3.0847    0.5206    0.7742]);
-% view(-117.5806,4.4359)
-
-% axis([0.2429    0.6627   -0.2055    0.2341    0.0970    0.5168])
-% view(-0.1755,-1.6436)
-
-
-% axis([0.2974    0.3448   -0.0945   -0.0571   -0.0172    0.0202]);
-% axis([0.2965    0.3290   -0.0969   -0.0712   -0.0017    0.0240]);
-% view(-69.3203,15.7950)
-
-%%
-
-% hold on
-% facenmp = load('io/facenmp.dat');
-% for ii=1:Nface_m
-%     if cell_lr_m(ii,1) == -1 
-%         plot3([facenmp(ii,4) facenmp(ii,4) + facenmp(ii,1)],[facenmp(ii,5) facenmp(ii,5) + facenmp(ii,2)],[facenmp(ii,6) facenmp(ii,6) + facenmp(ii,3)],'r')
-%     end 
-% end
-% hold off
-
-% hold on
-% [~,maxvf] = size(faces_m);
-% normface = zeros(Nface_m,3);
-% midface = zeros(Nface_m,3);
-% for ii=1:Nface_m
-%     nvf = 0;
-%     for jj=1:maxvf
-%         if ~isnan(faces_m(ii,jj))
-%             nvf = nvf + 1;
-%         end
-%     end 
-%     normface(ii,:) = newell_normal(nvf,faces_m(ii,1:nvf),vertices_m);
-%     midface(ii,1) = sum(vertices_m(faces_m(ii,1:nvf),1))/nvf;
-%     midface(ii,2) = sum(vertices_m(faces_m(ii,1:nvf),2))/nvf;
-%     midface(ii,3) = sum(vertices_m(faces_m(ii,1:nvf),3))/nvf;
-% end 
-% for ii=1:Nface_m
-%     if cell_lr_m(ii,1) == -2 || cell_lr_m(ii,1) == -1
-%         plot3([midface(ii,1) midface(ii,1) + normface(ii,1)],[midface(ii,2) midface(ii,2) + normface(ii,2)],[midface(ii,3) midface(ii,3) + normface(ii,3)],'r')
-%     end 
-% end
-% hold off
+% axis([12.2774   12.3775   -0.0532    0.0516    0.6567    0.7568]); %jet test
+% axis([7.8781    8.6622   -0.4465    0.3747   -1.2216   -0.4375]);
+% axis([11.3994   11.6326   -0.3901   -0.1459    0.3034    0.5365]);
+% axis([-0.0141    0.0174   -0.0091    0.0075   -0.4201   -0.4034]);
+% view(45,45)
+% axis([0.0327    0.5800   -0.2283    0.2034   -0.7054   -0.2737]);
+% axis([12.1669   12.3826   -0.0476    0.1225    0.6304    0.8006]);
+% axis([0.0940    0.3073   -0.1164    0.0518   -0.5972   -0.4290]);
+% axis([12.1025   12.3938   -0.1127    0.1171    0.5979    0.8276]);
+% view(45,45)
 
 %% 
 
 
-function [N] = newell_normal(Nvtxf,face_vtx,vertices) 
+% function [N] = newell_normal(Nvtxf,face_vtx,vertices) 
+% 
+%     %Initialise 
+%     N= zeros(1,3);
+% 
+%     %Accumulate normal vector to the face
+%     for vv=1:Nvtxf
+%         vc = vv; 
+%         vn = mod(vv,Nvtxf) + 1;
+%         vc = face_vtx(vc);
+%         vn = face_vtx(vn);
+%         vtxC(:) = vertices(vc,:);
+%         vtxN(:) = vertices(vn,:);
+%         N(1) = N(1) - 0.5*(vtxN(3) + vtxC(3))*(vtxN(2) - vtxC(2));
+%         N(2) = N(2) - 0.5*(vtxN(1) + vtxC(1))*(vtxN(3) - vtxC(3));
+%         N(3) = N(3) - 0.5*(vtxN(2) + vtxC(2))*(vtxN(1) - vtxC(1));
+%     end 
+% end 
 
-    %Initialise 
-    N= zeros(1,3);
-
-    %Accumulate normal vector to the face
-    for vv=1:Nvtxf
-        vc = vv; 
-        vn = mod(vv,Nvtxf) + 1;
-        vc = face_vtx(vc);
-        vn = face_vtx(vn);
-        vtxC(:) = vertices(vc,:);
-        vtxN(:) = vertices(vn,:);
-        N(1) = N(1) - 0.5*(vtxN(3) + vtxC(3))*(vtxN(2) - vtxC(2));
-        N(2) = N(2) - 0.5*(vtxN(1) + vtxC(1))*(vtxN(3) - vtxC(3));
-        N(3) = N(3) - 0.5*(vtxN(2) + vtxC(2))*(vtxN(1) - vtxC(1));
-    end 
-end 
