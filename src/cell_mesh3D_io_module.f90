@@ -2,8 +2,8 @@
 !Max Wood - mw16116@bristol.ac.uk
 !Univeristy of Bristol - Department of Aerospace Engineering
 
-!Version 6.0
-!Updated 19-10-2023
+!Version 6.1
+!Updated 30-10-2023
 
 !Module
 module cellmesh3d_io_mod
@@ -21,33 +21,86 @@ type(cm3d_options) :: cm3dopt
 integer(in) :: nargs
 integer(in32) :: arglen,argstat
 
-!Check and process supplied command arguments
+!Check and process supplied command arguments 
 nargs = command_argument_count()
-if (nargs == 0) then !Use default paths and filename
+if (nargs == 0) then 
+    write(*,'(A)') '** at least one argument must be supplied [mode / surface name / io path / options path]'
+    stop
+elseif (nargs == 1) then !Use mode
+
+    !Read mode 
+    call get_command_argument(number=1, length=arglen)
+    allocate(character(len=arglen) :: cm3dopt%mode)
+    call get_command_argument(number=1, value=cm3dopt%mode, status=argstat)
+
+    !Set default paths and surface name 
     allocate(character(len=3) :: cm3dopt%iopath)
     cm3dopt%iopath = 'io/'
     allocate(character(len=3) :: cm3dopt%optpath)
     cm3dopt%optpath = 'io/'
     allocate(character(len=23) :: cm3dopt%surfacename)
     cm3dopt%surfacename = 'cell_mesh3d_surface.dat'
-elseif (nargs == 1) then !Use default paths and specified filename
+elseif (nargs == 2) then !Use mode and surface name
+
+    !Read mode 
+    call get_command_argument(number=1, length=arglen)
+    allocate(character(len=arglen) :: cm3dopt%mode)
+    call get_command_argument(number=1, value=cm3dopt%mode, status=argstat)
+
+    !Read surface name 
+    call get_command_argument(number=2, length=arglen)
+    allocate(character(len=arglen) :: cm3dopt%surfacename)
+    call get_command_argument(number=2, value=cm3dopt%surfacename, status=argstat)
+
+    !Set default paths
     allocate(character(len=3) :: cm3dopt%iopath)
     cm3dopt%iopath = 'io/'
     allocate(character(len=3) :: cm3dopt%optpath)
     cm3dopt%optpath = 'io/'
+elseif (nargs == 3) then !Use mode, surface name and io path
+
+    !Read mode 
     call get_command_argument(number=1, length=arglen)
-    allocate(character(len=arglen) :: cm3dopt%surfacename)
-    call get_command_argument(number=1, value=cm3dopt%surfacename, status=argstat)
-else !Use specified paths and filename 
-    call get_command_argument(number=1, length=arglen)
-    allocate(character(len=arglen) :: cm3dopt%surfacename)
-    call get_command_argument(number=1, value=cm3dopt%surfacename, status=argstat)
+    allocate(character(len=arglen) :: cm3dopt%mode)
+    call get_command_argument(number=1, value=cm3dopt%mode, status=argstat)
+
+    !Read surface name 
     call get_command_argument(number=2, length=arglen)
-    allocate(character(len=arglen) :: cm3dopt%optpath)
-    call get_command_argument(number=2, value=cm3dopt%optpath, status=argstat)
+    allocate(character(len=arglen) :: cm3dopt%surfacename)
+    call get_command_argument(number=2, value=cm3dopt%surfacename, status=argstat)
+
+    !Read io path
     call get_command_argument(number=3, length=arglen)
     allocate(character(len=arglen) :: cm3dopt%iopath)
     call get_command_argument(number=3, value=cm3dopt%iopath, status=argstat)
+
+    !Set default options path
+    allocate(character(len=3) :: cm3dopt%optpath)
+    cm3dopt%optpath = 'io/'
+elseif (nargs == 4) then !Use mode, surface name, io path and options path
+
+    !Read mode 
+    call get_command_argument(number=1, length=arglen)
+    allocate(character(len=arglen) :: cm3dopt%mode)
+    call get_command_argument(number=1, value=cm3dopt%mode, status=argstat)
+
+    !Read surface name 
+    call get_command_argument(number=2, length=arglen)
+    allocate(character(len=arglen) :: cm3dopt%surfacename)
+    call get_command_argument(number=2, value=cm3dopt%surfacename, status=argstat)
+
+    !Read io path
+    call get_command_argument(number=3, length=arglen)
+    allocate(character(len=arglen) :: cm3dopt%iopath)
+    call get_command_argument(number=3, value=cm3dopt%iopath, status=argstat)
+
+    !Read options path
+    call get_command_argument(number=4, length=arglen)
+    allocate(character(len=arglen) :: cm3dopt%optpath)
+    call get_command_argument(number=4, value=cm3dopt%optpath, status=argstat)
+else
+    write(*,'(A)') '** too many command arguments supplied'
+    stop
 end if 
 return 
 end subroutine get_process_arguments
@@ -192,6 +245,9 @@ read(11,*) !skip
 read(11,*) cm3dopt%glink_nsmooth
 read(11,*) !skip
 read(11,*) !skip
+read(11,*) cm3dopt%RBF_relax
+read(11,*) !skip
+read(11,*) !skip
 read(11,*) !skip
 
 read(11,*) cm3dopt%set_customBCs
@@ -251,6 +307,11 @@ end do
 
 !Close file
 close(11)
+
+!Display
+if (cm3dopt%dispt == 1) then
+    write(*,'(A)') '    {complete}'
+end if
 return 
 end subroutine import_surface_geometry
 
@@ -394,6 +455,51 @@ end subroutine export_volume_mesh_flux
 
 
 
+!Import volume mesh subroutine ===========================
+subroutine import_volume_mesh_flux(volume_mesh,cm3dopt)
+implicit none 
+
+!Variables - Import
+type(cm3d_options) :: cm3dopt
+type(vol_mesh_data) :: volume_mesh
+
+!Variables - Local
+integer(in) :: ii
+
+!Open file 
+open(11,file=cm3dopt%iopath//'grid_flux')
+
+!Read item quantities 
+read(11,*) volume_mesh%ncell,volume_mesh%nface,volume_mesh%nvtx
+
+!Read mesh faces 
+allocate(volume_mesh%faces(volume_mesh%nface))
+read(11,*) volume_mesh%faces(:)%nvtx
+do ii=1,volume_mesh%nface
+    allocate(volume_mesh%faces(ii)%vertices(volume_mesh%faces(ii)%nvtx))
+    read(11,*) volume_mesh%faces(ii)%vertices(:)
+end do 
+read(11,*) volume_mesh%faces(:)%cleft
+read(11,*) volume_mesh%faces(:)%cright
+
+!Read mesh vertices 
+allocate(volume_mesh%vtx(volume_mesh%nvtx,3))
+do ii=1,volume_mesh%nvtx
+    read(11,*) volume_mesh%vtx(ii,:)
+end do 
+
+!Close file 
+close(11)
+
+!Display
+if (cm3dopt%dispt == 1) then
+    write(*,'(A)') '    {complete}'
+end if
+return 
+end subroutine import_volume_mesh_flux
+
+
+
 !Export PPoU volume-surface to surface interpolation structure ===========================
 subroutine export_vs2s_interpstruc(volume_mesh,surface_mesh,cm3dopt)
 implicit none 
@@ -456,6 +562,75 @@ if (cm3dopt%dispt == 1) then
 end if
 return 
 end subroutine export_vs2s_interpstruc
+
+
+
+
+!Import flow gradients subroutine ===========================
+subroutine import_flow_gradients(gradient_vol,volume_mesh,cm3dopt)
+implicit none 
+
+!Variables - Import
+real(dp), dimension(:,:), allocatable :: gradient_vol
+type(cm3d_options) :: cm3dopt
+type(vol_mesh_data) :: volume_mesh
+
+!Variables - Local
+integer(in) :: ii
+
+!Allocate gradient array 
+allocate(gradient_vol(volume_mesh%nvtx,3))
+
+!Open file 
+open(11,file=cm3dopt%iopath//'gradient.dat')
+
+!Read gradients 
+do ii=1,volume_mesh%nvtx
+    read(11,*) gradient_vol(ii,:)
+end do 
+
+!Close file 
+close(11)
+
+!Display
+if (cm3dopt%dispt == 1) then
+    write(*,'(A)') '    {complete}'
+end if
+return 
+end subroutine import_flow_gradients
+
+
+
+
+!Export surface gradients subroutine ===========================
+subroutine export_surface_gradients(gradient_surf,surface_mesh,cm3dopt)
+implicit none 
+
+!Variables - Import
+real(dp), dimension(:,:) :: gradient_surf
+type(cm3d_options) :: cm3dopt
+type(surface_data) :: surface_mesh
+
+!Variables - Local
+integer(in) :: ii
+
+!Open file 
+open(11,file=cm3dopt%iopath//'gradient_surf.dat')
+
+!Write gradients 
+do ii=1,surface_mesh%nvtx
+    write(11,'(F18.12,A,F18.12,A,F18.12)') gradient_surf(ii,1),' ',gradient_surf(ii,2),' ',gradient_surf(ii,3)
+end do 
+
+!Close file 
+close(11)
+
+!Display
+if (cm3dopt%dispt == 1) then
+    write(*,'(A)') '    {complete}'
+end if
+return 
+end subroutine export_surface_gradients
 
 
 

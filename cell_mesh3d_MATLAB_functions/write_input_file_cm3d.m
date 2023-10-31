@@ -2,8 +2,8 @@
 %Max Wood - mw16116@bristol.ac.uk
 %Univeristy of Bristol - Department of Aerospace Engineering
 
-%Version 1.4
-%Updated 27-09-2023
+%Version 1.5
+%Updated 31-09-2023
 
 %Function -----------------------------------------------------------------
 function [] = write_input_file_cm3d(cm3dop)
@@ -122,6 +122,9 @@ fid = fopen('io\cell_mesh3d_options.dat','w+');
     fprintf(fid,'%s \n',' ');
     fprintf(fid,'%s \n','#Number of nearby vertices used to smooth the gradient at each surface vertex');
     fprintf(fid,'%d \n',cm3dop.glink_nsmooth);
+    fprintf(fid,'%s \n',' ');
+    fprintf(fid,'%s \n','#RBF interpolation smoothing relaxation parameter');
+    fprintf(fid,'%f \n',cm3dop.glink_RBF_relax);
     fprintf(fid,'%s \n',' ');
 
     fprintf(fid,'%s \n','#=== Boundary Condition Options ======================');

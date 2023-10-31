@@ -2,13 +2,42 @@
 !Max Wood - mw16116@bristol.ac.uk
 !Univeristy of Bristol - Department of Aerospace Engineering
 
-!Version 1.2
-!Updated 17-10-2023
+!Version 2.0
+!Updated 30-10-2023
 
 !Module
 module cellmesh3d_surface_mod
 use cellmesh3d_geometry_mod
+use cellmesh3d_connectivity_mod
 contains 
+
+
+!Preprocess surface mesh ===========================
+subroutine preprocess_surface_mesh(surface_mesh,cm3dopt)
+implicit none 
+
+!Variables - Import
+type(cm3d_options) :: cm3dopt
+type(surface_data) :: surface_mesh
+
+!Orient surface mesh for positive object volume (this ensures normal vector convention is correct)
+call orient_surface(surface_mesh,cm3dopt)
+
+!Build surface mesh connectivity 
+call get_tri_valence(surface_mesh%valence,surface_mesh%maxValence,surface_mesh%connectivity,surface_mesh%nfcs,surface_mesh%nvtx)
+call construct_edges(surface_mesh%nedge,surface_mesh%edges,surface_mesh%valence,surface_mesh%nvtx,surface_mesh%nfcs,&
+surface_mesh%connectivity)
+call get_connectivity(surface_mesh%V2E,surface_mesh%V2F,surface_mesh%F2E,surface_mesh%E2F,surface_mesh%valence,&
+surface_mesh%maxvalence,surface_mesh%nedge,surface_mesh%nfcs,surface_mesh%nvtx,surface_mesh%edges,surface_mesh%connectivity)
+call construct_surface_normals(surface_mesh)
+
+!Evaluate surface mesh face curvature 
+call evaluate_surf_rcurv(surface_mesh,cm3dopt)
+return 
+end subroutine preprocess_surface_mesh
+
+
+
 
 !Orient surface mesh subroutine ===========================
 subroutine orient_surface(surface_mesh,cm3dopt)

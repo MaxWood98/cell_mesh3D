@@ -21,14 +21,14 @@ real(dp), parameter :: min_precision = 2.0d0*epsilon(1.0d0)
 
 !Options data type
 type cm3d_options
-    character(len=:), allocatable :: iopath,optpath,surfacename,surface_dir,boundary_dir,meshinout,meshfrmat
+    character(len=:), allocatable :: iopath,optpath,surfacename,surface_dir,boundary_dir,meshinout,meshfrmat,mode
     integer(in) :: Nrefine,NrefineB,Ncell_max,Nrefine_flood_i,Nrefine_flood_f,Nrefine_flood_b,meshtype,surfRcurvNpts
     integer(in) :: normDconv,NintEmax,glink_con,glink_nnn,glink_nsmooth,max_int_size,surf_force_simplify
     integer(in) :: max_depth,dispt,nlpflood,nlpsmooth,surface_type,set_customBCs,remFFzones,zbndsiter
     integer(in) :: Nlevel,Nsmooth_Norm,Nsmooth_front,Ls_smooth_front,Nsstype,Nzone_cBC,remISzones,stnintmax
     integer(in) :: bc_xmin,bc_xmax,bc_ymin,bc_ymax,bc_zmin,bc_zmax
     integer(in), dimension(:), allocatable :: BC_zone_bc
-    real(dp) :: ad_padding,far_field_bound,FminArea,CminVol,surfRcurvM
+    real(dp) :: ad_padding,far_field_bound,FminArea,CminVol,surfRcurvM,RBF_relax
     real(dp) :: dsolve_kd,dsolve_cfl,dsolve_resconv,zangbnd,zlenmax,zlenmin
     real(dp) :: cell1h,cellh_gr,om_offset_x,om_offset_y,om_offset_z,intcointol,baryloctol
     real(dp), dimension(:,:), allocatable :: BC_zone_coords

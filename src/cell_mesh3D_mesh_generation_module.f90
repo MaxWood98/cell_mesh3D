@@ -2,8 +2,8 @@
 !Max Wood - mw16116@bristol.ac.uk
 !Univeristy of Bristol - Department of Aerospace Engineering
 
-!Version 1.2
-!Updated 18-10-2023
+!Version 2.0
+!Updated 30-10-2023
 
 !Module
 module cellmesh3d_mesh_generation_mod
@@ -13,7 +13,6 @@ use cellmesh3d_surface_mod
 use cell_mesh3d_octree_mod
 use cellmesh3d_mesh_build_mod
 use cellmesh3d_postprocess_mod
-use cellmesh3d_connectivity_mod
 use cellmesh3d_gradient_coupling_mod
 contains
 
@@ -47,20 +46,6 @@ type(tree_data) :: surface_adtree
 !Octree 
 type(octree_data) :: ot_mesh
 
-!Initialisation -------------------------------------------------------
-if (cm3dopt%dispt == 1) then
-    write(*,'(A)') ' '
-    write(*,'(A)')'+--------------------------------------------+'
-    write(*,'(A)')'|                Cell Mesh 3D                |'
-    write(*,'(A)')'|         3D Cut-Cell Mesh Generator         |'
-    write(*,'(A)')'|        Version 0.1.0 || 18/10/2023         |'
-    write(*,'(A)')'|                 Max Wood                   |'
-    write(*,'(A)')'|           University of Bristol            |'
-    write(*,'(A)')'|    Department of Aerospace Engineering     |'
-    write(*,'(A)')'+--------------------------------------------+'
-    write(*,'(A)') ' '
-end if
-
 !Set hardcoded parameters -------------------------------------------------------
 !Set global object bounding box padding for adtree node containement
 global_target_pad = 0.0d0
@@ -85,19 +70,8 @@ if (cm3dopt%dispt == 1) then
     write(*,'(A)') '--> constructing surface geometry parameters'
 end if
 
-!Orient surface mesh for positive object volume (this ensures normal vector convention is correct)
-call orient_surface(surface_mesh,cm3dopt)
-
-!Build surface mesh connectivity 
-call get_tri_valence(surface_mesh%valence,surface_mesh%maxValence,surface_mesh%connectivity,surface_mesh%nfcs,surface_mesh%nvtx)
-call construct_edges(surface_mesh%nedge,surface_mesh%edges,surface_mesh%valence,surface_mesh%nvtx,surface_mesh%nfcs,&
-surface_mesh%connectivity)
-call get_connectivity(surface_mesh%V2E,surface_mesh%V2F,surface_mesh%F2E,surface_mesh%E2F,surface_mesh%valence,&
-surface_mesh%maxvalence,surface_mesh%nedge,surface_mesh%nfcs,surface_mesh%nvtx,surface_mesh%edges,surface_mesh%connectivity)
-call construct_surface_normals(surface_mesh)
-
-!Evaluate surface mesh face curvature 
-call evaluate_surf_rcurv(surface_mesh,cm3dopt)
+!Preprocess surface mesh 
+call preprocess_surface_mesh(surface_mesh,cm3dopt)
 
 !Global object bounds
 obj_max_x = maxval(surface_mesh%vertices(:,1))
