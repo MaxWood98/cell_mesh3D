@@ -61,8 +61,8 @@ cm3dop.adtree_maxd = 4;           %AD tree maximum depth in terms of dimension c
 %Gradient linking options
 cm3dop.glink_con = 0;             %Construct and export volume to surface gradient interpolation (1 = yes | 0 = no)
 cm3dop.glink_nnn = 20;            %Number of nearest neighbours to use for volume to surface gradient interpolation
-cm3dop.glink_nsmooth = 0;         %Number of nearby vertices used to smooth the gradient at each surface vertex
-cm3dop.glink_RBF_relax = 0.005;   %RBF interpolation smoothing relaxation parameter
+cm3dop.glink_nsmooth = 4;         %Number of nearby vertices used to smooth the gradient at each surface vertex
+cm3dop.glink_RBF_relax = 1e-4;    %RBF interpolation smoothing relaxation parameter
 
 %Boundary condition options ===============================================
 %Boundary condition options 
@@ -103,7 +103,7 @@ end
 
 %Call meshing function 
 system('cell_mesh3d mesh');
-% system('cell_mesh3d project');
+system('cell_mesh3d project');
 
 %% Load mesh
 
@@ -152,12 +152,12 @@ end
 patch('vertices',vertices_m,'faces',faces_wall,'EdgeAlpha',1.0,'Marker','none','facecolor',[1.0 0.8 0.8],'facealpha',1.0); %Surface
 % patch('vertices',vertices_m,'faces',faces_int,'EdgeAlpha',1.0,'Marker','none','facecolor',[0.8 0.8 0.8],'facealpha',0.0); %Internal
 
-% %Plot surface and volume gradients 
-% grad_surf = load('io/gradient_surf.dat');
-% [~,~,vertices,connectivity] = import_cell_mesh3d_surface();
-% quiver3(vertices(:,1),vertices(:,2),vertices(:,3),grad_surf(:,1),grad_surf(:,2),grad_surf(:,3),0,'r','maxheadsize',0.01)
-% grad_vol = load('io/gradient.dat');
-% quiver3(vertices_m(:,1),vertices_m(:,2),vertices_m(:,3),grad_vol(:,1),grad_vol(:,2),grad_vol(:,3),0,'b','maxheadsize',0.01)
+%Plot surface and volume gradients 
+grad_surf = load('io/gradient_surf.dat');
+[~,~,vertices,connectivity] = import_cell_mesh3d_surface();
+quiver3(vertices(:,1),vertices(:,2),vertices(:,3),grad_surf(:,1),grad_surf(:,2),grad_surf(:,3),0,'r','maxheadsize',0.01)
+grad_vol = load('io/gradient.dat');
+quiver3(vertices_m(:,1),vertices_m(:,2),vertices_m(:,3),grad_vol(:,1),grad_vol(:,2),grad_vol(:,3),0,'b','maxheadsize',0.01)
 
 %Format
 axis square
@@ -167,3 +167,4 @@ xlabel('x')
 ylabel('y')
 zlabel('z')
 hold off
+axis([-0.2 1.2 -0.5 0.5 -0.5 0.5])

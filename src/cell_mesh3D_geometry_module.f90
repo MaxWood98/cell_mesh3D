@@ -8,7 +8,7 @@
 !Geometry subroutines module
 module cellmesh3d_geometry_mod
 use cellmesh3d_linalg_mod
-use ieee_arithmetic, only: ieee_value,IEEE_QUIET_NAN
+use ieee_arithmetic!, only: ieee_value,IEEE_QUIET_NAN
 contains
 
 

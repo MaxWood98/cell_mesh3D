@@ -2,8 +2,8 @@
 !Max Wood - mw16116@bristol.ac.uk
 !Univeristy of Bristol - Department of Aerospace Engineering
 
-!Version 1.0
-!Updated 19-10-2023
+!Version 1.1
+!Updated 07-11-2023
 
 !Module
 module cellmesh3d_gradient_coupling_mod
@@ -25,9 +25,9 @@ type(vol_mesh_data) :: volume_mesh
 type(cm3d_options) :: cm3dopt
 
 !Variables - Local 
-integer(in) :: ii,jj,ff,vv,nn,kk,aa,pp
+integer(in) :: ii,ff,vv,nn,kk,aa,pp
 integer(in) :: Nfsurf,ftgt,etgt,vtgt,vtgta,nselected,maxValence,Npts,Npts_ss
-integer(in) :: fminD,vtx2,vtx3,nvsurf_sel,nvsurf_selN,nadd,vsins,vselect,v1,v2
+integer(in) :: fminD,vtx2,vtx3,nvsurf_sel,nvsurf_selN,nadd,vsins,vselect
 integer(in) :: face_surf(volume_mesh%nface),vsurf_gnn(cm3dopt%glink_nnn),smoothinterp(cm3dopt%glink_nsmooth+1)
 integer(in) :: vsurf_select(volume_mesh%nvtx),vsurf_dtagged(volume_mesh%nvtx)
 integer(in) :: vsurf_tag(volume_mesh%nvtx),vsurf_tag_sm(surface_mesh%nvtx)
@@ -35,9 +35,9 @@ integer(in), dimension(:), allocatable :: node_select,valence
 integer(in), dimension(:,:), allocatable :: V2F
 real(dp) :: lpad,zxmin,zxmax,zymin,zymax,zzmin,zzmax,dist_c,dist_n,vs_maxd,Rs
 real(dp) :: vf1(3),vf2(3),vf3(3),vid(4),vsurf_dist(volume_mesh%nvtx)
-real(dp), dimension(:,:), allocatable :: tvtx
 real(dp) :: R(cm3dopt%glink_nnn,cm3dopt%glink_nnn),Ri(cm3dopt%glink_nnn,cm3dopt%glink_nnn)
 real(dp) :: surf2volRBF(cm3dopt%glink_nnn),smooth_s(cm3dopt%glink_nsmooth+1)
+real(dp), dimension(:,:), allocatable :: tvtx
 type(face_data), dimension(:), allocatable :: faces_surf
 type(tree_data) :: sv_adtree
 
@@ -242,33 +242,15 @@ do vv=1,surface_mesh%nvtx
             end if 
         end do 
 
+        !Reset arrays 
+        Ri(:,:) = 0.0d0
+        surf2volRBF(:) = 0.0d0 
+
         !Cases
         if (vsins .LT. cm3dopt%glink_nnn) then !If too few point have been found 
 
-            !Reset arrays 
-            R(:,:) = 0.0d0 
-            Ri(:,:) = 0.0d0
-            surf2volRBF(:) = 0.0d0 
-
             !Build local dependance matrix and set support radius 
-            do ii=1,vsins
-                v1 = vsurf_gnn(ii)
-                do jj=1,vsins
-                    v2 = vsurf_gnn(jj)
-                    R(ii,jj) = norm2(volume_mesh%vtx(v2,:) - volume_mesh%vtx(v1,:)) 
-                end do 
-            end do 
-            Rs = 50.0d0*maxval(R(1:vsins,1:vsins))
-            do ii=1,vsins
-
-                !Set RBF value
-                do jj=1,vsins
-                    R(ii,jj) = wendlandc2(R(ii,jj),Rs)
-                end do 
-
-                !Apply smoothing by relaxing the interpolation condition
-                R(ii,ii) = R(ii,ii) - cm3dopt%RBF_relax 
-            end do 
+            call build_RBF_influence(R,Rs,vsins,vsurf_gnn,volume_mesh%vtx,cm3dopt)
 
             !Invert dependance matrix 
             call matinv(R(1:vsins,1:vsins),Ri(1:vsins,1:vsins),vsins)
@@ -285,24 +267,7 @@ do vv=1,surface_mesh%nvtx
             if (cm3dopt%glink_nnn .GT. 1) then !More than one surface point requested
 
                 !Build local dependance matrix and set support radius 
-                do ii=1,cm3dopt%glink_nnn
-                    v1 = vsurf_gnn(ii)
-                    do jj=1,cm3dopt%glink_nnn
-                        v2 = vsurf_gnn(jj)
-                        R(ii,jj) = norm2(volume_mesh%vtx(v2,:) - volume_mesh%vtx(v1,:)) 
-                    end do 
-                end do 
-                Rs = 50.0d0*maxval(R)
-                do ii=1,cm3dopt%glink_nnn
-
-                    !Set RBF value
-                    do jj=1,cm3dopt%glink_nnn
-                        R(ii,jj) = wendlandc2(R(ii,jj),Rs)
-                    end do 
-
-                    !Apply smoothing by relaxing the interpolation condition
-                    R(ii,ii) = R(ii,ii) - cm3dopt%RBF_relax 
-                end do 
+                call build_RBF_influence(R,Rs,cm3dopt%glink_nnn,vsurf_gnn,volume_mesh%vtx,cm3dopt)
 
                 !Invert dependance matrix 
                 call matinv(R,Ri,cm3dopt%glink_nnn)
@@ -481,9 +446,9 @@ type(vol_mesh_data) :: volume_mesh
 type(cm3d_options) :: cm3dopt
 
 !Variables - Local 
-integer(in) :: ii,jj,ff,vv,nn,kk,aa,pp
+integer(in) :: ii,ff,vv,nn,kk,aa,pp
 integer(in) :: Nfsurf,ftgt,etgt,vtgt,vtgta,nselected,maxValence,Npts,Npts_ss
-integer(in) :: fminD,vtx2,vtx3,nvsurf_sel,nvsurf_selN,nadd,vsins,vselect,v1,v2
+integer(in) :: fminD,vtx2,vtx3,nvsurf_sel,nvsurf_selN,nadd,vsins,vselect
 integer(in) :: face_surf(volume_mesh%nface),vsurf_gnn(cm3dopt%glink_nnn),smoothinterp(cm3dopt%glink_nsmooth+1)
 integer(in) :: vsurf_select(volume_mesh%nvtx),vsurf_dtagged(volume_mesh%nvtx)
 integer(in) :: vsurf_tag(volume_mesh%nvtx),vsurf_tag_sm(surface_mesh%nvtx)
@@ -491,9 +456,9 @@ integer(in), dimension(:), allocatable :: node_select,valence
 integer(in), dimension(:,:), allocatable :: V2F
 real(dp) :: lpad,zxmin,zxmax,zymin,zymax,zzmin,zzmax,dist_c,dist_n,vs_maxd,Rs
 real(dp) :: vf1(3),vf2(3),vf3(3),vid(4),vsurf_dist(volume_mesh%nvtx)
-real(dp), dimension(:,:), allocatable :: tvtx,gradient_surf_temp
 real(dp) :: R(cm3dopt%glink_nnn,cm3dopt%glink_nnn),Ri(cm3dopt%glink_nnn,cm3dopt%glink_nnn)
 real(dp) :: surf2volRBF(cm3dopt%glink_nnn),smooth_s(cm3dopt%glink_nsmooth+1),surf_smoothRBF(cm3dopt%glink_nsmooth+1)
+real(dp), dimension(:,:), allocatable :: tvtx,gradient_surf_temp
 type(face_data), dimension(:), allocatable :: faces_surf
 type(tree_data) :: sv_adtree
 
@@ -579,7 +544,7 @@ do vv=1,surface_mesh%nvtx
         end if 
     end do 
     
-    !Set search length as 4x the distance to the farthes other surface vertex
+    !Set search length as 4x the distance to the farthest other surface vertex
     lpad = 4.0d0*dist_c
 
     !Find the closest volume mesh surface face to the current surface mesh vertex
@@ -704,33 +669,15 @@ do vv=1,surface_mesh%nvtx
             end if 
         end do 
 
+        !Reset arrays 
+        Ri(:,:) = 0.0d0
+        surf2volRBF(:) = 0.0d0 
+
         !Cases
         if (vsins .LT. cm3dopt%glink_nnn) then !If too few point have been found 
 
-            !Reset arrays 
-            R(:,:) = 0.0d0 
-            Ri(:,:) = 0.0d0
-            surf2volRBF(:) = 0.0d0 
-
             !Build local dependance matrix and set support radius 
-            do ii=1,vsins
-                v1 = vsurf_gnn(ii)
-                do jj=1,vsins
-                    v2 = vsurf_gnn(jj)
-                    R(ii,jj) = norm2(volume_mesh%vtx(v2,:) - volume_mesh%vtx(v1,:)) 
-                end do 
-            end do 
-            Rs = 50.0d0*maxval(R(1:vsins,1:vsins))
-            do ii=1,vsins
-
-                !Set RBF value
-                do jj=1,vsins
-                    R(ii,jj) = wendlandc2(R(ii,jj),Rs)
-                end do 
-
-                !Apply smoothing by relaxing the interpolation condition
-                R(ii,ii) = R(ii,ii) - cm3dopt%RBF_relax 
-            end do 
+            call build_RBF_influence(R,Rs,vsins,vsurf_gnn,volume_mesh%vtx,cm3dopt)
 
             !Invert dependance matrix 
             call matinv(R(1:vsins,1:vsins),Ri(1:vsins,1:vsins),vsins)
@@ -747,25 +694,7 @@ do vv=1,surface_mesh%nvtx
             if (cm3dopt%glink_nnn .GT. 1) then !More than one surface point requested
 
                 !Build local dependance matrix and set support radius 
-                do ii=1,cm3dopt%glink_nnn
-                    v1 = vsurf_gnn(ii)
-                    do jj=1,cm3dopt%glink_nnn
-                        v2 = vsurf_gnn(jj)
-                        R(ii,jj) = norm2(volume_mesh%vtx(v2,:) - volume_mesh%vtx(v1,:)) 
-                    end do 
-                    R(ii,ii) = R(ii,ii) 
-                end do 
-                Rs = 50.0d0*maxval(R)
-                do ii=1,cm3dopt%glink_nnn
-
-                    !Set RBF value
-                    do jj=1,cm3dopt%glink_nnn
-                        R(ii,jj) = wendlandc2(R(ii,jj),Rs)
-                    end do 
-
-                    !Apply smoothing by relaxing the interpolation condition
-                    R(ii,ii) = R(ii,ii) - cm3dopt%RBF_relax 
-                end do 
+                call build_RBF_influence(R,Rs,cm3dopt%glink_nnn,vsurf_gnn,volume_mesh%vtx,cm3dopt)
 
                 !Invert dependance matrix 
                 call matinv(R,Ri,cm3dopt%glink_nnn)
@@ -793,13 +722,13 @@ do vv=1,surface_mesh%nvtx
     end if 
 end do 
 
-!Store surface gradients in the temporary structure
-gradient_surf_temp(:,:) = gradient_surf(:,:)
-
 !Return if no smoothing 
 if (cm3dopt%glink_nsmooth == 0) then 
     return 
 end if
+
+!Store surface gradients in the temporary structure
+gradient_surf_temp(:,:) = gradient_surf(:,:)
 
 !Display
 if (cm3dopt%dispt == 1) then
@@ -897,7 +826,7 @@ do vv=1,surface_mesh%nvtx
         end do 
 
         !Build RBF values at smoothing points 
-        surf_smoothRBF(:) = 0 
+        surf_smoothRBF(:) = 0.0d0 
         if (cm3dopt%glink_nsmooth+1 .GE. 1) then 
             Rs = 1.1d0*maxval(smooth_s(:))
             do aa=1,Npts_ss
@@ -915,6 +844,58 @@ do vv=1,surface_mesh%nvtx
 end do 
 return 
 end subroutine project_gradients
+
+
+
+
+!Subroutine to build RBF influence ===========================
+subroutine build_RBF_influence(R,R_sup,Npoint,point_list,vertices,cm3dopt)
+implicit none 
+
+!Variables - Import
+integer(in) :: Npoint 
+integer(in), dimension(:) :: point_list
+real(dp) :: R_sup
+real(dp), dimension(:,:) :: R,vertices 
+type(cm3d_options) :: cm3dopt
+
+!Variables - Local
+integer(in) :: ii,jj 
+integer(in) :: v1,v2
+real(dp) :: mindist(Npoint)
+
+!Populate distance matrix
+R(:,:) = 0.0d0 
+mindist(:) = ieee_value(1.0d0,IEEE_POSITIVE_INF)
+do ii=1,Npoint
+    v1 = point_list(ii)
+    do jj=1,Npoint
+        v2 = point_list(jj)
+        R(ii,jj) = norm2(vertices(v2,:) - vertices(v1,:)) 
+        if ((R(ii,jj) .GT. 0.0d0) .AND. (R(ii,jj) .LT. mindist(ii))) then 
+            mindist(ii) = R(ii,jj)
+        end if 
+    end do 
+end do 
+
+!Set support radius 
+R_sup = 50.0d0*maxval(R(1:Npoint,1:Npoint))
+
+!Evaluate RBF values for each distance entry
+do ii=1,Npoint
+    do jj=1,Npoint
+        R(ii,jj) = wendlandc2(R(ii,jj),R_sup)
+    end do
+end do 
+
+!Relax interpolation at interior points 
+if ((Npoint .GT. 2) .AND. (cm3dopt%RBF_relax .NE. 0.0d0)) then 
+    do ii=2,Npoint-1
+        R(ii,ii) = R(ii,ii) + cm3dopt%RBF_relax/(mindist(ii)*R_sup)
+    end do 
+end if 
+return 
+end subroutine build_RBF_influence
 
 
 

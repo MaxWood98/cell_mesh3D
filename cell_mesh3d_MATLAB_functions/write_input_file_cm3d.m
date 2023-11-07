@@ -2,13 +2,13 @@
 %Max Wood - mw16116@bristol.ac.uk
 %Univeristy of Bristol - Department of Aerospace Engineering
 
-%Version 1.5
-%Updated 31-09-2023
+%Version 2.0
+%Updated 07-11-2023
 
 %Function -----------------------------------------------------------------
 function [] = write_input_file_cm3d(cm3dop)
 fid = fopen('io\cell_mesh3d_options.dat','w+');
-    fprintf(fid,'%s \n','#cell_mesh3d options file (version 0.1.0)');
+    fprintf(fid,'%s \n','#cell_mesh3d options file (version 0.2.1)');
     fprintf(fid,'%s \n',' ');
     
     fprintf(fid,'%s \n','#=== General Options =================================');

@@ -2,8 +2,8 @@
 !Max Wood - mw16116@bristol.ac.uk
 !Univeristy of Bristol - Department of Aerospace Engineering
 
-!Version 6.1
-!Updated 30-10-2023
+!Version 6.2
+!Updated 07-11-2023
 
 !Module
 module cellmesh3d_io_mod
@@ -619,7 +619,8 @@ open(11,file=cm3dopt%iopath//'gradient_surf.dat')
 
 !Write gradients 
 do ii=1,surface_mesh%nvtx
-    write(11,'(F18.12,A,F18.12,A,F18.12)') gradient_surf(ii,1),' ',gradient_surf(ii,2),' ',gradient_surf(ii,3)
+    write(11,'(A,A,A,A,A)') real2F0_Xstring(gradient_surf(ii,1),12_in),' ',&
+    real2F0_Xstring(gradient_surf(ii,2),12_in),' ',real2F0_Xstring(gradient_surf(ii,3),12_in)
 end do 
 
 !Close file 
