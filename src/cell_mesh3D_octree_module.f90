@@ -2,8 +2,8 @@
 !Max Wood - mw16116@bristol.ac.uk
 !Univeristy of Bristol - Department of Aerospace Engineering
 
-!Version 3.0
-!Updated 18-10-2023
+!Version 4.0
+!Updated 13-02-2024
 
 !Module
 module cell_mesh3d_octree_mod
@@ -388,9 +388,11 @@ do rr=1,cm3dopt%Nrefine + cm3dopt%NrefineB
                 !Tag cell to refine 
                 if (nselected .NE. 0) then 
                     if (rr .LE. cm3dopt%Nrefine) then !Check for and tag geometry surface overlap (normal refinement)
-                        Qrefine(cc) = face_cell_ovlp_bool(ot_mesh,surface_mesh,surface_adtree,node_select,nselected,cc)
+                        Qrefine(cc) = face_cell_ovlp_bool(ot_mesh,surface_mesh,surface_adtree,node_select,nselected,&
+                        cm3dopt%otr_cellpad,cc)
                     else !Check for and tag geometry surface overlap with smaller than cell radius of curvature (boosted refinement)
-                        Qrefine(cc) = face_cell_ovlp_wrcurv_bool(ot_mesh,surface_mesh,surface_adtree,node_select,nselected,cc)
+                        Qrefine(cc) = face_cell_ovlp_wrcurv_bool(ot_mesh,surface_mesh,surface_adtree,node_select,&
+                        nselected,cm3dopt%otr_cellpad,cc)
                     end if 
                     if (Qrefine(cc) == 1) then 
                         nrefine = nrefine + 1
@@ -1080,23 +1082,22 @@ end subroutine cascade_adjacency
 
 
 !Face - cell overlap testing function ===========================
-function face_cell_ovlp_bool(ot_mesh,surface_mesh,adtree,node_select,nselected,cidx) result(olstat)
+function face_cell_ovlp_bool(ot_mesh,surface_mesh,adtree,node_select,nselected,cpad,cidx) result(olstat)
 implicit none 
 
 !Variables - Import
 integer(in) :: olstat,nselected,cidx
 integer(in), dimension(:) :: node_select
+real(dp) :: cpad
 type(tree_data) :: adtree
 type(surface_data) :: surface_mesh
 type(octree_data) :: ot_mesh
 
 !Variables - Local
 integer(in) :: nn,kk,exist 
-real(dp) :: vf1(3),vf2(3),vf3(3),v1(3),v2(3),v3(3),v4(3),v5(3),v6(3),v7(3),v8(3)
+real(dp) :: vf1(3),vf2(3),vf3(3),v1(3),v2(3),v3(3),v4(3),v5(3),v6(3),v7(3),v8(3),vcmid(3)
 
-!Test
-exist = 0 
-olstat = 0 
+!Base cell vertices
 v1(:) = ot_mesh%vtx(ot_mesh%cell_vcnr(cidx,1),:)
 v2(:) = ot_mesh%vtx(ot_mesh%cell_vcnr(cidx,2),:)
 v3(:) = ot_mesh%vtx(ot_mesh%cell_vcnr(cidx,3),:)
@@ -1105,6 +1106,23 @@ v5(:) = ot_mesh%vtx(ot_mesh%cell_vcnr(cidx,5),:)
 v6(:) = ot_mesh%vtx(ot_mesh%cell_vcnr(cidx,6),:)
 v7(:) = ot_mesh%vtx(ot_mesh%cell_vcnr(cidx,7),:)
 v8(:) = ot_mesh%vtx(ot_mesh%cell_vcnr(cidx,8),:)
+
+!Cell midpoint 
+vcmid(:) = (v1(:) + v2(:) + v3(:) + v4(:) + v5(:) + v6(:) + v7(:) + v8(:))*0.125d0 
+
+!Padded cell vertices 
+v1(:) = v1(:) + cpad*(v1(:) - vcmid(:))
+v2(:) = v2(:) + cpad*(v2(:) - vcmid(:))
+v3(:) = v3(:) + cpad*(v3(:) - vcmid(:))
+v4(:) = v4(:) + cpad*(v4(:) - vcmid(:))
+v5(:) = v5(:) + cpad*(v5(:) - vcmid(:))
+v6(:) = v6(:) + cpad*(v6(:) - vcmid(:))
+v7(:) = v7(:) + cpad*(v7(:) - vcmid(:))
+v8(:) = v8(:) + cpad*(v8(:) - vcmid(:))
+
+!Test
+exist = 0 
+olstat = 0 
 do nn=1,nselected
     do kk=1,adtree%tree(node_select(nn))%nentry
 
@@ -1133,23 +1151,22 @@ end function face_cell_ovlp_bool
 
 
 !Face - cell edge intersect testing function ===========================
-function face_celledge_intersect_bool(ot_mesh,surface_mesh,adtree,node_select,nselected,cidx) result(olstat)
+function face_celledge_intersect_bool(ot_mesh,surface_mesh,adtree,node_select,nselected,cpad,cidx) result(olstat)
 implicit none 
 
 !Variables - Import
 integer(in) :: olstat,nselected,cidx
 integer(in), dimension(:) :: node_select
+real(dp) :: cpad
 type(tree_data) :: adtree
 type(surface_data) :: surface_mesh
 type(octree_data) :: ot_mesh
 
 !Variables - Local
 integer(in) :: nn,kk,exist 
-real(dp) :: vf1(3),vf2(3),vf3(3),v1(3),v2(3),v3(3),v4(3),v5(3),v6(3),v7(3),v8(3)
+real(dp) :: vf1(3),vf2(3),vf3(3),v1(3),v2(3),v3(3),v4(3),v5(3),v6(3),v7(3),v8(3),vcmid(3)
 
-!Test
-exist = 0 
-olstat = 0 
+!Base cell vertices
 v1(:) = ot_mesh%vtx(ot_mesh%cell_vcnr(cidx,1),:)
 v2(:) = ot_mesh%vtx(ot_mesh%cell_vcnr(cidx,2),:)
 v3(:) = ot_mesh%vtx(ot_mesh%cell_vcnr(cidx,3),:)
@@ -1158,6 +1175,23 @@ v5(:) = ot_mesh%vtx(ot_mesh%cell_vcnr(cidx,5),:)
 v6(:) = ot_mesh%vtx(ot_mesh%cell_vcnr(cidx,6),:)
 v7(:) = ot_mesh%vtx(ot_mesh%cell_vcnr(cidx,7),:)
 v8(:) = ot_mesh%vtx(ot_mesh%cell_vcnr(cidx,8),:)
+
+!Cell midpoint 
+vcmid(:) = (v1(:) + v2(:) + v3(:) + v4(:) + v5(:) + v6(:) + v7(:) + v8(:))*0.125d0 
+
+!Padded cell vertices 
+v1(:) = v1(:) + cpad*(v1(:) - vcmid(:))
+v2(:) = v2(:) + cpad*(v2(:) - vcmid(:))
+v3(:) = v3(:) + cpad*(v3(:) - vcmid(:))
+v4(:) = v4(:) + cpad*(v4(:) - vcmid(:))
+v5(:) = v5(:) + cpad*(v5(:) - vcmid(:))
+v6(:) = v6(:) + cpad*(v6(:) - vcmid(:))
+v7(:) = v7(:) + cpad*(v7(:) - vcmid(:))
+v8(:) = v8(:) + cpad*(v8(:) - vcmid(:))
+
+!Test
+exist = 0 
+olstat = 0 
 do nn=1,nselected
     do kk=1,adtree%tree(node_select(nn))%nentry
 
@@ -1186,12 +1220,13 @@ end function face_celledge_intersect_bool
 
 
 !Segment - cell overlap with surface radius of curvature check testing function ===========================
-function face_cell_ovlp_wrcurv_bool(ot_mesh,surface_mesh,adtree,node_select,nselected,cidx) result(olstat)
+function face_cell_ovlp_wrcurv_bool(ot_mesh,surface_mesh,adtree,node_select,nselected,cpad,cidx) result(olstat)
 implicit none 
 
 !Variables - Import
 integer(in) :: olstat,nselected,cidx
 integer(in), dimension(:) :: node_select
+real(dp) :: cpad
 type(tree_data) :: adtree
 type(surface_data) :: surface_mesh
 type(octree_data) :: ot_mesh
@@ -1199,11 +1234,9 @@ type(octree_data) :: ot_mesh
 !Variables - Local
 integer(in) :: nn,kk,vv,exist,curv_valid 
 real(dp) :: sRcurv,cdx,cdy,cdz,reflen
-real(dp) :: vf1(3),vf2(3),vf3(3),v1(3),v2(3),v3(3),v4(3),v5(3),v6(3),v7(3),v8(3)
+real(dp) :: vf1(3),vf2(3),vf3(3),v1(3),v2(3),v3(3),v4(3),v5(3),v6(3),v7(3),v8(3),vcmid(3)
 
-!Test
-exist = 0 
-olstat = 0 
+!Base cell vertices
 v1(:) = ot_mesh%vtx(ot_mesh%cell_vcnr(cidx,1),:)
 v2(:) = ot_mesh%vtx(ot_mesh%cell_vcnr(cidx,2),:)
 v3(:) = ot_mesh%vtx(ot_mesh%cell_vcnr(cidx,3),:)
@@ -1216,6 +1249,39 @@ cdx = abs(max(v1(1),v2(1),v3(1),v4(1),v5(1),v6(1),v7(1),v8(1)) - min(v1(1),v2(1)
 cdy = abs(max(v1(2),v2(2),v3(2),v4(2),v5(2),v6(2),v7(2),v8(2)) - min(v1(2),v2(2),v3(2),v4(2),v5(2),v6(2),v7(2),v8(2)))
 cdz = abs(max(v1(3),v2(3),v3(3),v4(3),v5(3),v6(3),v7(3),v8(3)) - min(v1(3),v2(3),v3(3),v4(3),v5(3),v6(3),v7(3),v8(3)))
 reflen = (cdx*cdy*cdz)**(1.0d0/3.0d0)
+
+!Cell midpoint 
+vcmid(:) = (v1(:) + v2(:) + v3(:) + v4(:) + v5(:) + v6(:) + v7(:) + v8(:))*0.125d0 
+
+!Padded cell vertices 
+v1(:) = v1(:) + cpad*(v1(:) - vcmid(:))
+v2(:) = v2(:) + cpad*(v2(:) - vcmid(:))
+v3(:) = v3(:) + cpad*(v3(:) - vcmid(:))
+v4(:) = v4(:) + cpad*(v4(:) - vcmid(:))
+v5(:) = v5(:) + cpad*(v5(:) - vcmid(:))
+v6(:) = v6(:) + cpad*(v6(:) - vcmid(:))
+v7(:) = v7(:) + cpad*(v7(:) - vcmid(:))
+v8(:) = v8(:) + cpad*(v8(:) - vcmid(:))
+
+
+
+
+! v1(:) = ot_mesh%vtx(ot_mesh%cell_vcnr(cidx,1),:)
+! v2(:) = ot_mesh%vtx(ot_mesh%cell_vcnr(cidx,2),:)
+! v3(:) = ot_mesh%vtx(ot_mesh%cell_vcnr(cidx,3),:)
+! v4(:) = ot_mesh%vtx(ot_mesh%cell_vcnr(cidx,4),:)
+! v5(:) = ot_mesh%vtx(ot_mesh%cell_vcnr(cidx,5),:)
+! v6(:) = ot_mesh%vtx(ot_mesh%cell_vcnr(cidx,6),:)
+! v7(:) = ot_mesh%vtx(ot_mesh%cell_vcnr(cidx,7),:)
+! v8(:) = ot_mesh%vtx(ot_mesh%cell_vcnr(cidx,8),:)
+! cdx = abs(max(v1(1),v2(1),v3(1),v4(1),v5(1),v6(1),v7(1),v8(1)) - min(v1(1),v2(1),v3(1),v4(1),v5(1),v6(1),v7(1),v8(1)))
+! cdy = abs(max(v1(2),v2(2),v3(2),v4(2),v5(2),v6(2),v7(2),v8(2)) - min(v1(2),v2(2),v3(2),v4(2),v5(2),v6(2),v7(2),v8(2)))
+! cdz = abs(max(v1(3),v2(3),v3(3),v4(3),v5(3),v6(3),v7(3),v8(3)) - min(v1(3),v2(3),v3(3),v4(3),v5(3),v6(3),v7(3),v8(3)))
+! reflen = (cdx*cdy*cdz)**(1.0d0/3.0d0)
+
+!Test
+exist = 0 
+olstat = 0 
 do nn=1,nselected
     do kk=1,adtree%tree(node_select(nn))%nentry
 

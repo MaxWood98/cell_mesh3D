@@ -154,6 +154,7 @@ cm3dopt%NintEmax = 50
 cm3dopt%elenpad = 0.0d0 
 cm3dopt%intcointol = 1e-12
 cm3dopt%baryloctol = 1e-8
+cm3dopt%otr_cellpad = 0.0d0 
 
 !Set mesh surface options 
 cm3dopt%surface_type = 0
@@ -211,8 +212,8 @@ call set_str_opt(cm3dopt%boundary_dir,11,'bndrynormdir')
 call set_str_opt(cm3dopt%meshfrmat,11,'meshformat')
 
 !Set quadtree refinement options 
-call set_int_opt(cm3dopt%Nrefine,11,'nqtrefine')
-call set_int_opt(cm3dopt%NrefineB,11,'nboostqtrefine')
+call set_int_opt(cm3dopt%Nrefine,11,'notrefine')
+call set_int_opt(cm3dopt%NrefineB,11,'nboostotrefine')
 call set_int_opt(cm3dopt%Ncell_max,11,'ncellmax')
 call set_int_opt(cm3dopt%Nrefine_flood_i,11,'nadjfloodi')
 call set_int_opt(cm3dopt%Nrefine_flood_f,11,'nadjfloodf')
@@ -239,6 +240,7 @@ call set_real_opt(cm3dopt%CminVol,11,'cminvol')
 call set_int_opt(cm3dopt%NintEmax,11,'enintmax')
 call set_real_opt(cm3dopt%intcointol,11,'intcointol')
 call set_real_opt(cm3dopt%baryloctol,11,'barycointol')
+call set_real_opt(cm3dopt%otr_cellpad,11,'otrcellpad')
 
 !Set mesh surface options 
 call set_int_opt(cm3dopt%surface_type,11,'surftype')

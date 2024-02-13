@@ -25,11 +25,11 @@ cm3dopt.meshfrmat = 'cutcell';     %Mesh output format (cutcell / su2_dual)
 
 %Cut-Cell mesh options ====================================================
 %Octree options
-cm3dopt.nrefine = 10;              %Maximum refinement level 
+cm3dopt.nrefine = 11;              %Maximum refinement level 
 cm3dopt.nrefineB = 0;              %Maximum additional refinement levels in high curvature regions
 cm3dopt.ncell_max = 500000;        %Maximum number of cells
-cm3dopt.nrflood_i = 0;             %Refinement adjacency flooding iterations at the first refinement
-cm3dopt.nrflood_f = 0;             %Refinement adjacency flooding iterations at the final refinement
+cm3dopt.nrflood_i = 3;             %Refinement adjacency flooding iterations at the first refinement
+cm3dopt.nrflood_f = 3;             %Refinement adjacency flooding iterations at the final refinement
 cm3dopt.nrflood_b = 1;             %Refinement adjacency flooding iterations on boosted refinement
 cm3dopt.fbound = 8.0;              %Far field distance from object centre  
 cm3dopt.coffset = [0.0 0.0 0.0];   %Object/mesh centre offset (x / y / z)
@@ -50,7 +50,8 @@ cm3dopt.cminvol = 0.01;            %Volume fraction of an undeformed cell at eac
 %Mesh geometry intersection options
 cm3dopt.enintmax = 10;             %Maximum number of mesh-geometry intersections on each volume mesh edge 
 cm3dopt.int_coin_tol = 1e-12;      %Intersection co-incidence tollerance 
-cm3dopt.bary_coin_tol = 1e-8;       %Barycentric location tollerance 
+cm3dopt.bary_coin_tol = 1e-8;      %Barycentric location tollerance 
+cm3dopt.otrcpad = 0.05;            %Octree cell overlap padding distance as a multiple of the cell half diagonal length
 
 %Surface format options
 cm3dopt.surftype = 0;              %Geometry surface type (0 = 'simplified' | 1 = 'exact') 
@@ -143,10 +144,10 @@ hold on
 % patch('vertices',vertices_m,'faces',faces_m,'EdgeAlpha',1.0,'Marker','none','facecolor',[0.8 0.8 0.8],'facealpha',0.9);
 
 %Read input surface file 
-[~,~,vertices,connectivity] = import_cell_mesh3d_surface();
+% [~,~,vertices,connectivity] = import_cell_mesh3d_surface();
 
 %Plot object surface 
-patch('vertices',vertices,'faces',connectivity,'FaceColor',[0.9 0.8 1.0],'EdgeColor',[0.2 0.2 0.2],'EdgeAlpha',1.0,'FaceAlpha',1.0);
+% patch('vertices',vertices,'faces',connectivity,'FaceColor',[0.9 0.8 1.0],'EdgeColor',[0.2 0.2 0.2],'EdgeAlpha',1.0,'FaceAlpha',1.0);
 
 %Divide mesh to plot
 Nwallface = 0;
@@ -174,8 +175,8 @@ for ii=1:Nface_m
 end
 faces_wall(faces_wall == 0) = nan;
 faces_int(faces_int == 0) = nan;
-% patch('vertices',vertices_m,'faces',faces_wall,'EdgeAlpha',1.0,'Marker','none','facecolor',[1.0 0.8 0.8],'facealpha',1.0); %Surface
-% patch('vertices',vertices_m,'faces',faces_int,'EdgeAlpha',1.0,'Marker','none','facecolor',[0.8 0.8 0.8],'facealpha',0.0); %Internal
+patch('vertices',vertices_m,'faces',faces_wall,'EdgeAlpha',1.0,'Marker','none','facecolor',[1.0 0.8 0.8],'facealpha',1.0); %Surface
+patch('vertices',vertices_m,'faces',faces_int,'EdgeAlpha',1.0,'Marker','none','facecolor',[0.8 0.8 0.8],'facealpha',0.0); %Internal
 
 % %Plot surface and volume gradients 
 % grad_surf = load('io/gradient_surf.dat');

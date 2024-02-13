@@ -2,13 +2,13 @@
 %Max Wood - mw16116@bristol.ac.uk
 %Univeristy of Bristol - Department of Aerospace Engineering
 
-%Version 3.0
-%Updated 12-02-2024
+%Version 3.1
+%Updated 13-02-2024
 
 %Function -----------------------------------------------------------------
 function [] = write_input_file_cm3d(cm3dopt)
 fid = fopen('io\cell_mesh3d_options.dat','w+');
-    fprintf(fid,'%s \n','#cell_mesh2d options file (version 0.4.0)');
+    fprintf(fid,'%s \n','#cell_mesh3d options file (version 0.4.2)');
     fprintf(fid,'%s \n',' ');
     
     fprintf(fid,'%s \n','#=== General Options =================================');
@@ -33,12 +33,12 @@ fid = fopen('io\cell_mesh3d_options.dat','w+');
     fprintf(fid,'%s %s \n','meshformat =',cm3dopt.meshfrmat);
     fprintf(fid,'%s \n',' '); 
 
-    fprintf(fid,'%s \n','#=== Quadtree Options ================================');
+    fprintf(fid,'%s \n','#=== Octree Options ================================');
     fprintf(fid,'%s \n','#Maximum refinement level');
-    fprintf(fid,'%s %d \n','nqtrefine =',cm3dopt.nrefine);
+    fprintf(fid,'%s %d \n','notrefine =',cm3dopt.nrefine);
     fprintf(fid,'%s \n',' ');
     fprintf(fid,'%s \n','#Maximum additional refinement levels in high curvature regions');
-    fprintf(fid,'%s %d \n','nboostqtrefine =',cm3dopt.nrefineB);
+    fprintf(fid,'%s %d \n','nboostotrefine =',cm3dopt.nrefineB);
     fprintf(fid,'%s \n',' ');
     fprintf(fid,'%s \n','#Maximum number of cells');
     fprintf(fid,'%s %d \n','ncellmax =',cm3dopt.ncell_max);
@@ -91,6 +91,9 @@ fid = fopen('io\cell_mesh3d_options.dat','w+');
     fprintf(fid,'%s \n',' ');
     fprintf(fid,'%s \n','#Barycentric co-incidence tollerance on the unit triangle');
     fprintf(fid,'%s %E \n','barycointol =',cm3dopt.bary_coin_tol);
+    fprintf(fid,'%s \n',' ');
+    fprintf(fid,'%s \n','#Octree cell overlap padding distance as a multiple of the cell half diagonal length');
+    fprintf(fid,'%s %E \n','otrcellpad =',cm3dopt.otrcpad);
     fprintf(fid,'%s \n',' ');
         
     fprintf(fid,'%s \n','#=== Surface Format Options ==========================');

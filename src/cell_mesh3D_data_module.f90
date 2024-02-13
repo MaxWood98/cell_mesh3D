@@ -123,7 +123,7 @@ type cm3d_options
     integer(in) :: bc_xmin,bc_xmax,bc_ymin,bc_ymax,bc_zmin,bc_zmax
     integer(in), dimension(:), allocatable :: BC_zone_bc
     real(dp) :: ADTpadding,far_field_bound,FminArea,CminVol,surfRcurvM,RBF_relaxP,RBF_relaxD,RBF_rsup
-    real(dp) :: dsolve_kd,dsolve_cfl,dsolve_resconv,zangbnd,zlenmax,zlenmin,elenpad
+    real(dp) :: dsolve_kd,dsolve_cfl,dsolve_resconv,zangbnd,zlenmax,zlenmin,elenpad,otr_cellpad
     real(dp) :: cell1h,cellh_gr,om_offset_x,om_offset_y,om_offset_z,intcointol,baryloctol
     real(dp), dimension(:,:), allocatable :: BC_zone_coords
     real(dp) :: mesh_xmin,mesh_xmax,mesh_ymin,mesh_ymax,mesh_zmin,mesh_zmax

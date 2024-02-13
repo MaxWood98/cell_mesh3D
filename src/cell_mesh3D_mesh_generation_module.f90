@@ -2,8 +2,8 @@
 !Max Wood - mw16116@bristol.ac.uk
 !Univeristy of Bristol - Department of Aerospace Engineering
 
-!Version 2.0
-!Updated 30-10-2023
+!Version 2.1
+!Updated 13-02-2024
 
 !Module
 module cellmesh3d_mesh_generation_mod
@@ -90,10 +90,11 @@ obj_cz = 0.5d0*(obj_max_z + obj_min_z)
 if (cm3dopt%dispt == 1) then
     write(*,'(A)') ' '
     write(*,'(A)') '== Properties =========================='
-    write(*,"(A,I0)") '   Imported surface vertices = ', surface_mesh%nvtx
-    write(*,"(A,I0)") '   Imported surface faces = ', surface_mesh%nfcs
-    write(*,"(A,F12.6,A,F12.6,A,F12.6)") '   Geometry dimensions (x/y/z) = ', obj_max_x - obj_min_x,' ', &
-    obj_max_y - obj_min_y,' ', obj_max_z - obj_min_z
+    write(*,"(A,I0)") '   imported surface vertices = ', surface_mesh%nvtx
+    write(*,"(A,I0)") '   imported surface faces = ', surface_mesh%nfcs
+    write(*,"(A,A,A,A,A,A)") '   geometry dimensions (x/y/z) = ', &
+    real2F0_Xstring(obj_max_x - obj_min_x,8_in),' / ', real2F0_Xstring(obj_max_y - obj_min_y,8_in)&
+    ,' / ', real2F0_Xstring(obj_max_z - obj_min_z,8_in)
     write(*,'(A)') '== Properties =========================='
     write(*,'(A)') ' '
 end if

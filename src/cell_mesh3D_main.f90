@@ -33,7 +33,7 @@ if (cm3dopt%dispt == 1) then
     write(*,'(A)')'+--------------------------------------------+'
     write(*,'(A)')'|                Cell Mesh 3D                |'
     write(*,'(A)')'|         3D Cut-Cell Mesh Generator         |'
-    write(*,'(A)')'|        Version 0.4.1 || 13/02/2024         |'
+    write(*,'(A)')'|        Version 0.4.2 || 13/02/2024         |'
     write(*,'(A)')'|                 Max Wood                   |'
     write(*,'(A)')'|           University of Bristol            |'
     write(*,'(A)')'|    Department of Aerospace Engineering     |'
