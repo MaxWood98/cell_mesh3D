@@ -2,11 +2,12 @@
 !Max Wood - mw16116@bristol.ac.uk
 !Univeristy of Bristol - Department of Aerospace Engineering
 
-!Version 6.2
-!Updated 07-11-2023
+!Version 7.0
+!Updated 12-02-2024
 
 !Module
 module cellmesh3d_io_mod
+use io_utilities
 use cellmesh3d_data_mod
 contains
 
@@ -108,6 +109,89 @@ end subroutine get_process_arguments
 
 
 
+!Set default options subroutine ===========================
+subroutine set_default_options(cm3dopt)
+implicit none 
+
+!Variables - Import
+type(cm3d_options) :: cm3dopt
+
+!Set general options 
+cm3dopt%dispt = 1
+cm3dopt%meshtype = 0
+cm3dopt%meshinout = 'out'
+cm3dopt%surface_dir = 'in'
+cm3dopt%boundary_dir = 'in'
+cm3dopt%meshfrmat = 'cutcell'
+
+!Set quadtree refinement options 
+cm3dopt%Nrefine = 11
+cm3dopt%NrefineB = 0
+cm3dopt%Ncell_max = 500000
+cm3dopt%Nrefine_flood_i = 5
+cm3dopt%Nrefine_flood_f = 5
+cm3dopt%Nrefine_flood_B = 2
+cm3dopt%far_field_bound = 15.0d0 
+cm3dopt%om_offset_x = 0.0d0 
+cm3dopt%om_offset_y = 0.0d0 
+cm3dopt%om_offset_z = 0.0d0 
+
+!Set domain bound options
+cm3dopt%set_mbounds = 0
+cm3dopt%mesh_xmin = -10.0d0
+cm3dopt%mesh_xmax = 10.0d0
+cm3dopt%mesh_ymin = -10.0d0 
+cm3dopt%mesh_ymax = 10.0d0 
+cm3dopt%mesh_zmin = -10.0d0 
+cm3dopt%mesh_zmax = 10.0d0 
+
+!Set mesh cleaning options
+cm3dopt%FminArea = 1e-8
+cm3dopt%CminVol = 0.1d0 
+
+!Set geometry intersection options
+cm3dopt%NintEmax = 50
+cm3dopt%elenpad = 0.0d0 
+cm3dopt%intcointol = 1e-12
+cm3dopt%baryloctol = 1e-8
+
+!Set mesh surface options 
+cm3dopt%surface_type = 0
+cm3dopt%surf_force_simplify = 1
+cm3dopt%surfRcurvM = 1.0d0 
+
+!Set mesh smoothing options 
+cm3dopt%Nsstype = 0
+cm3dopt%nlpflood = 5
+cm3dopt%nlpsmooth = 10
+
+!Set ADtree options
+cm3dopt%ADTpadding = 0.0d0
+cm3dopt%ADTmax_depth = 10 
+cm3dopt%ADTminNodedivsize = 10
+
+!Set gradient linking options 
+cm3dopt%glink_con = 0 
+cm3dopt%glink_type = 'rbf'
+cm3dopt%glink_nnn = 10
+cm3dopt%glink_nsmooth = 0 
+
+!Set radial basis function options 
+cm3dopt%RBF_rsup = 50.0d0 
+cm3dopt%RBF_relaxD = 0.05d0 
+cm3dopt%RBF_relaxP = 0.5d0 
+
+!Set boundary condition options 
+cm3dopt%set_customBCs = 0 
+cm3dopt%remFFzones = 0 
+cm3dopt%remNCzones = 0 
+cm3dopt%remISzones = 0 
+return 
+end subroutine set_default_options
+
+
+
+
 !Options import subroutine ===========================
 subroutine cm3d_import_options(cm3dopt)
 implicit none
@@ -115,156 +199,78 @@ implicit none
 !Variables - Import
 type(cm3d_options) :: cm3dopt
 
-!Variables - Local 
-character(len=100) :: rtemp 
-
 !Open file
 open(11,file=cm3dopt%optpath//'cell_mesh3d_options.dat')
 
-!Import options  
-read(11,*) !skip
-read(11,*) !skip
-read(11,*) !skip
-read(11,*) !skip
-read(11,*) cm3dopt%dispt
-read(11,*) !skip
-read(11,*) !skip
-read(11,*) cm3dopt%normDconv
-read(11,*) !skip
-read(11,*) !skip
-read(11,*) !skip
+!Set general options 
+call set_int_opt(cm3dopt%dispt,11,'condisp')
+call set_int_opt(cm3dopt%meshtype,11,'meshtype')
+call set_str_opt(cm3dopt%meshinout,11,'meshinout')
+call set_str_opt(cm3dopt%surface_dir,11,'surfnormdir')
+call set_str_opt(cm3dopt%boundary_dir,11,'bndrynormdir')
+call set_str_opt(cm3dopt%meshfrmat,11,'meshformat')
 
-read(11,*) cm3dopt%meshtype
-read(11,*) !skip
-read(11,*) !skip
-read(11,*) rtemp
-allocate(character(len=len_trim(rtemp)) :: cm3dopt%meshinout)
-cm3dopt%meshinout = rtemp(1:len_trim(rtemp))
-read(11,*) !skip
-read(11,*) !skip
-read(11,*) rtemp
-allocate(character(len=len_trim(rtemp)) :: cm3dopt%surface_dir)
-cm3dopt%surface_dir = rtemp(1:len_trim(rtemp))
-read(11,*) !skip
-read(11,*) !skip
-read(11,*) rtemp
-allocate(character(len=len_trim(rtemp)) :: cm3dopt%boundary_dir)
-cm3dopt%boundary_dir = rtemp(1:len_trim(rtemp))
-read(11,*) !skip
-read(11,*) !skip
-read(11,*) rtemp
-allocate(character(len=len_trim(rtemp)) :: cm3dopt%meshfrmat)
-cm3dopt%meshfrmat = rtemp(1:len_trim(rtemp))
-read(11,*) !skip
-read(11,*) !skip
-read(11,*) !skip
+!Set quadtree refinement options 
+call set_int_opt(cm3dopt%Nrefine,11,'nqtrefine')
+call set_int_opt(cm3dopt%NrefineB,11,'nboostqtrefine')
+call set_int_opt(cm3dopt%Ncell_max,11,'ncellmax')
+call set_int_opt(cm3dopt%Nrefine_flood_i,11,'nadjfloodi')
+call set_int_opt(cm3dopt%Nrefine_flood_f,11,'nadjfloodf')
+call set_int_opt(cm3dopt%Nrefine_flood_B,11,'nadjfloodb')
+call set_real_opt(cm3dopt%far_field_bound,11,'farfielddist')
+call set_real_opt(cm3dopt%om_offset_x,11,'offsett_x')
+call set_real_opt(cm3dopt%om_offset_y,11,'offsett_y')
+call set_real_opt(cm3dopt%om_offset_z,11,'offsett_z')
 
-read(11,*) cm3dopt%Nrefine
-read(11,*) !skip
-read(11,*) !skip
-read(11,*) cm3dopt%NrefineB
-read(11,*) !skip
-read(11,*) !skip
-read(11,*) cm3dopt%Ncell_max
-read(11,*) !skip
-read(11,*) !skip
-read(11,*) cm3dopt%Nrefine_flood_i
-read(11,*) !skip
-read(11,*) !skip
-read(11,*) cm3dopt%Nrefine_flood_f
-read(11,*) !skip
-read(11,*) !skip
-read(11,*) cm3dopt%Nrefine_flood_B
-read(11,*) !skip
-read(11,*) !skip
-read(11,*) cm3dopt%far_field_bound
-read(11,*) !skip
-read(11,*) !skip
-read(11,*) cm3dopt%om_offset_x
-read(11,*) cm3dopt%om_offset_y
-read(11,*) cm3dopt%om_offset_z
-read(11,*) !skip
-read(11,*) !skip
-read(11,*) !skip
+!Set domain bound options
+call set_int_opt(cm3dopt%set_mbounds,11,'forcebounds')
+call set_real_opt(cm3dopt%mesh_xmin,11,'bound_xmin')
+call set_real_opt(cm3dopt%mesh_xmax,11,'bound_xmax')
+call set_real_opt(cm3dopt%mesh_ymin,11,'bound_ymin')
+call set_real_opt(cm3dopt%mesh_ymax,11,'bound_ymax')
+call set_real_opt(cm3dopt%mesh_zmin,11,'bound_zmin')
+call set_real_opt(cm3dopt%mesh_zmax,11,'bound_zmax')
 
-read(11,*) cm3dopt%FminArea
-read(11,*) !skip
-read(11,*) !skip 
-read(11,*) cm3dopt%CminVol
-read(11,*) !skip
-read(11,*) !skip
-read(11,*) !skip
+!Set mesh cleaning options
+call set_real_opt(cm3dopt%FminArea,11,'fminarea')
+call set_real_opt(cm3dopt%CminVol,11,'cminvol')
 
-read(11,*) cm3dopt%NintEmax
-read(11,*) !skip
-read(11,*) !skip
-read(11,*) cm3dopt%intcointol
-read(11,*) !skip
-read(11,*) !skip
-read(11,*) cm3dopt%baryloctol
-read(11,*) !skip
-read(11,*) !skip
-read(11,*) !skip
+!Set geometry intersection options
+call set_int_opt(cm3dopt%NintEmax,11,'enintmax')
+call set_real_opt(cm3dopt%intcointol,11,'intcointol')
+call set_real_opt(cm3dopt%baryloctol,11,'barycointol')
 
-read(11,*) cm3dopt%surface_type
-read(11,*) !skip
-read(11,*) !skip 
-read(11,*) cm3dopt%surf_force_simplify
-read(11,*) !skip
-read(11,*) !skip 
-read(11,*) cm3dopt%surfRcurvM
-read(11,*) !skip
-read(11,*) !skip
-read(11,*) !skip
+!Set mesh surface options 
+call set_int_opt(cm3dopt%surface_type,11,'surftype')
+call set_int_opt(cm3dopt%surf_force_simplify,11,'forcesimplify')
+call set_real_opt(cm3dopt%surfRcurvM,11,'scurvmult')
 
-read(11,*) cm3dopt%Nsstype
-read(11,*) !skip
-read(11,*) !skip
-read(11,*) cm3dopt%nlpflood
-read(11,*) !skip
-read(11,*) !skip
-read(11,*) cm3dopt%nlpsmooth
-read(11,*) !skip
-read(11,*) !skip
-read(11,*) !skip
+!Set mesh smoothing options 
+call set_int_opt(cm3dopt%Nsstype,11,'smoothingtype')
+call set_int_opt(cm3dopt%nlpflood,11,'smoothingnflood')
+call set_int_opt(cm3dopt%nlpsmooth,11,'smoothingniter')
 
-read(11,*) cm3dopt%ad_padding
-read(11,*) !skip
-read(11,*) !skip
-read(11,*) cm3dopt%max_depth
-read(11,*) !skip
-read(11,*) !skip
-read(11,*) !skip
+!Set ADtree options
+call set_real_opt(cm3dopt%ADTpadding,11,'adtpadding')
+call set_int_opt(cm3dopt%ADTmax_depth,11,'adtndimcycle')
+call set_int_opt(cm3dopt%ADTminNodedivsize,11,'adtmindivnsize')
 
-read(11,*) cm3dopt%glink_con
-read(11,*) !skip
-read(11,*) !skip
-read(11,*) cm3dopt%glink_nnn
-read(11,*) !skip
-read(11,*) !skip
-read(11,*) cm3dopt%glink_nsmooth
-read(11,*) !skip
-read(11,*) !skip
-read(11,*) cm3dopt%RBF_relax
-read(11,*) !skip
-read(11,*) !skip
-read(11,*) !skip
+!Set gradient linking options 
+call set_int_opt(cm3dopt%glink_con,11,'glinkconstruct')
+call set_str_opt(cm3dopt%glink_type,11,'glinktype')
+call set_int_opt(cm3dopt%glink_nnn,11,'glinkrbfnpnt')
+call set_int_opt(cm3dopt%glink_nsmooth,11,'glinknpntsmooth')
 
-read(11,*) cm3dopt%set_customBCs
-read(11,*) !skip
-read(11,*) !skip
-read(11,*) cm3dopt%remFFzones
-read(11,*) !skip
-read(11,*) !skip
-read(11,*) cm3dopt%remISzones
-read(11,*) !skip
-read(11,*) !skip
-read(11,*) cm3dopt%bc_xmin
-read(11,*) cm3dopt%bc_xmax
-read(11,*) cm3dopt%bc_ymin
-read(11,*) cm3dopt%bc_ymax
-read(11,*) cm3dopt%bc_zmin
-read(11,*) cm3dopt%bc_zmax
+!Set radial basis function options 
+call set_real_opt(cm3dopt%RBF_rsup,11,'rbfrsup')
+call set_real_opt(cm3dopt%RBF_relaxD,11,'rbfrrelax')
+call set_real_opt(cm3dopt%RBF_relaxP,11,'rbfrelaxp')
+
+!Set boundary condition options 
+call set_int_opt(cm3dopt%set_customBCs,11,'setcustombcs')
+call set_int_opt(cm3dopt%remFFzones,11,'remffczones')
+call set_int_opt(cm3dopt%remNCzones,11,'remncczones')
+call set_int_opt(cm3dopt%remISzones,11,'remwallonlyzones')
 
 !Close file 
 close(11)
@@ -636,6 +642,28 @@ end subroutine export_surface_gradients
 
 
 
+!Write geometry check results subroutine ===========================
+subroutine export_geometry_check(is_selfintersecting,cm3dopt)
+implicit none 
+
+!Variables - Import
+logical :: is_selfintersecting
+type(cm3d_options) :: cm3dopt
+
+!Write
+open(11,file=cm3dopt%iopath//'geometry_status') 
+    if (is_selfintersecting) then 
+        write(11,'(A,I0)') 'self intersection = ',1
+    else
+        write(11,'(A,I0)') 'self intersection = ',0
+    end if 
+close(11)
+return 
+end subroutine export_geometry_check
+
+
+
+
 !Write status subroutine ===========================
 subroutine export_status(cm3dopt,cm3dfailure)
 implicit none 
@@ -698,48 +726,6 @@ write(fh,*) ( max(0,volume_mesh%edge(i:min(i+nperline-1,volume_mesh%nedge),4)),N
 close(fh)
 return 
 end subroutine write_cell_dataPLT
-
-
-
-
-!F0.X format with leading zero function =========================
-function real2F0_Xstring(val,X) result(str)
-
-!Result 
-character(len=:), allocatable :: str
-
-!Variables - Import 
-character(len=10) :: frmtI
-character(len=:), allocatable :: frmt,str_I
-integer(in) :: X,len_frmt,len_str
-real(dp) :: val
-
-!Set format descriptor
-write(frmtI,'(I0)') X
-len_frmt = len_trim(frmtI)
-allocate(character(len=len_frmt) :: frmt)
-frmt = frmtI(1:len_frmt)
-frmt = frmt//')'
-frmt = '(F0.'//frmt
-
-!Allocate initial character
-allocate(character(len=4*X) :: str_I)
-
-!Write data to return charachter
-write(str_I,frmt) val
-
-!Allocate return character
-len_str = len_trim(str_I)
-allocate(character(len=len_str) :: str)
-str = str_I(1:len_str)
-
-!Assign leading zero if required
-if (str(1:1) == '.') then 
-    str = '0'//str
-elseif (str(1:2) == '-.') then 
-    str = '-0.'//str(3:len_str)
-end if 
-end function real2F0_Xstring
 
 
 end module cellmesh3d_io_mod

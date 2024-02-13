@@ -1,12 +1,12 @@
-%Function to read cell_mesh2d surface file 
+%Function to read cell_mesh3d surface file 
 %Max Wood - mw16116@bristol.ac.uk
 %Univeristy of Bristol - Department of Aerospace Engineering
 
-%Version 1.0
-%Updated 23-05-2023
+%Version 1.1
+%Updated 19-12-2023
 
 %Function -----------------------------------------------------------------
-function [Nvtx,Nedge,vertices,connectivity] = import_cell_mesh3d_surface()
+function [Nvtx,Nedge,vertices,faces] = import_cell_mesh3d_surface()
 
     %Read surface file
     fid = fopen('io/cell_mesh3d_surface.dat');
@@ -24,8 +24,8 @@ function [Nvtx,Nedge,vertices,connectivity] = import_cell_mesh3d_surface()
     vertices(:,3) = surf{3}(2:Nvtx+1);
 
     %Read connectivity
-    connectivity = zeros(Nedge,3);
-    connectivity(:,1) = surf{1}(Nvtx+2:Nvtx+Nedge+1);
-    connectivity(:,2) = surf{2}(Nvtx+2:Nvtx+Nedge+1);
-    connectivity(:,3) = surf{3}(Nvtx+2:Nvtx+Nedge+1);
+    faces = zeros(Nedge,3);
+    faces(:,1) = surf{1}(Nvtx+2:Nvtx+Nedge+1);
+    faces(:,2) = surf{2}(Nvtx+2:Nvtx+Nedge+1);
+    faces(:,3) = surf{3}(Nvtx+2:Nvtx+Nedge+1);
 end

@@ -2,12 +2,11 @@
 !Max Wood - mw16116@bristol.ac.uk
 !Univeristy of Bristol - Department of Aerospace Engineering
 
-!Version 1.1
-!Updated 07-11-2023
+!Version 1.2
+!Updated 12-02-2024
 
 !Module
 module cellmesh3d_gradient_coupling_mod
-use cellmesh3d_linalg_mod
 use cellmesh3d_adtree_mod
 use cellmesh3d_geometry_mod
 use cellmesh3d_connectivity_mod
@@ -82,7 +81,7 @@ do ff=1,Nfsurf
     tvtx(ff,5) = maxval(volume_mesh%vtx(faces_surf(ff)%vertices(:),2)) !ymax
     tvtx(ff,6) = maxval(volume_mesh%vtx(faces_surf(ff)%vertices(:),3)) !zmax
 end do
-call build_ADtree(sv_adtree,Ndim,cm3dopt%max_depth,node_minDIVsize,tvtx,global_target_pad,cm3dopt%dispt)
+call build_ADtree(sv_adtree,Ndim,cm3dopt%ADTmax_depth,node_minDIVsize,tvtx,global_target_pad,cm3dopt%dispt)
 nselected = 0
 allocate(node_select(sv_adtree%nnode))
 node_select(:) = 0 
@@ -433,7 +432,7 @@ end subroutine construct_surfvol_grad_coupling
 
 
 !Gradient projection subroutine ===========================
-subroutine project_gradients(gradient_surf,gradient_vol,volume_mesh,surface_mesh,Ndim,node_minDIVsize,global_target_pad,cm3dopt)
+subroutine project_gradients_RBF(gradient_surf,gradient_vol,volume_mesh,surface_mesh,Ndim,node_minDIVsize,global_target_pad,cm3dopt)
 implicit none 
 
 !Variables - Import
@@ -509,7 +508,7 @@ do ff=1,Nfsurf
     tvtx(ff,5) = maxval(volume_mesh%vtx(faces_surf(ff)%vertices(:),2)) !ymax
     tvtx(ff,6) = maxval(volume_mesh%vtx(faces_surf(ff)%vertices(:),3)) !zmax
 end do
-call build_ADtree(sv_adtree,Ndim,cm3dopt%max_depth,node_minDIVsize,tvtx,global_target_pad,cm3dopt%dispt)
+call build_ADtree(sv_adtree,Ndim,cm3dopt%ADTmax_depth,node_minDIVsize,tvtx,global_target_pad,cm3dopt%dispt)
 nselected = 0
 allocate(node_select(sv_adtree%nnode))
 node_select(:) = 0 
@@ -843,59 +842,7 @@ do vv=1,surface_mesh%nvtx
     end if 
 end do 
 return 
-end subroutine project_gradients
-
-
-
-
-!Subroutine to build RBF influence ===========================
-subroutine build_RBF_influence(R,R_sup,Npoint,point_list,vertices,cm3dopt)
-implicit none 
-
-!Variables - Import
-integer(in) :: Npoint 
-integer(in), dimension(:) :: point_list
-real(dp) :: R_sup
-real(dp), dimension(:,:) :: R,vertices 
-type(cm3d_options) :: cm3dopt
-
-!Variables - Local
-integer(in) :: ii,jj 
-integer(in) :: v1,v2
-real(dp) :: mindist(Npoint)
-
-!Populate distance matrix
-R(:,:) = 0.0d0 
-mindist(:) = ieee_value(1.0d0,IEEE_POSITIVE_INF)
-do ii=1,Npoint
-    v1 = point_list(ii)
-    do jj=1,Npoint
-        v2 = point_list(jj)
-        R(ii,jj) = norm2(vertices(v2,:) - vertices(v1,:)) 
-        if ((R(ii,jj) .GT. 0.0d0) .AND. (R(ii,jj) .LT. mindist(ii))) then 
-            mindist(ii) = R(ii,jj)
-        end if 
-    end do 
-end do 
-
-!Set support radius 
-R_sup = 50.0d0*maxval(R(1:Npoint,1:Npoint))
-
-!Evaluate RBF values for each distance entry
-do ii=1,Npoint
-    do jj=1,Npoint
-        R(ii,jj) = wendlandc2(R(ii,jj),R_sup)
-    end do
-end do 
-
-!Relax interpolation at interior points 
-if ((Npoint .GT. 2) .AND. (cm3dopt%RBF_relax .NE. 0.0d0)) then 
-    do ii=2,Npoint-1
-        R(ii,ii) = R(ii,ii) + cm3dopt%RBF_relax/(mindist(ii)*R_sup)
-    end do 
-end if 
-return 
-end subroutine build_RBF_influence
+end subroutine project_gradients_RBF
 
 
 

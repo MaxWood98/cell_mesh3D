@@ -2,13 +2,14 @@
 !Max Wood - mw16116@bristol.ac.uk
 !Univeristy of Bristol - Department of Aerospace Engineering
 
-!Version 10.0
-!Updated 24-10-2023
+!Version 11.0
+!Updated 13-02-2024
 
 !Geometry subroutines module
 module cellmesh3d_geometry_mod
-use cellmesh3d_linalg_mod
-use ieee_arithmetic!, only: ieee_value,IEEE_QUIET_NAN
+use ieee_arithmetic
+use cellmesh3d_adtree_mod
+use cellmesh3d_utilities_mod
 contains
 
 
@@ -240,6 +241,59 @@ else
 end if 
 return 
 end subroutine ray_triangle_intersection
+
+
+
+
+!Triangle-Triangle intersection bool function ===========================
+function tri_tri_intersect_bool(t1_v1,t1_v2,t1_v3,t2_v1,t2_v2,t2_v3) result(int_bool)
+implicit none 
+
+!Variables - Import
+integer(in) :: int_bool
+real(dp) :: t1_v1(3),t1_v2(3),t1_v3(3),t2_v1(3),t2_v2(3),t2_v3(3)
+
+!Variables - Local 
+integer(in) :: int_bool_test
+
+!Initialise state 
+int_bool = 0
+
+!Edges of triangle 1 with triangle 2
+int_bool_test = line_tri_intersect_bool(t1_v1,t1_v2,t2_v1,t2_v2,t2_v3)
+if (int_bool_test == 1) then 
+    int_bool = 1
+    return 
+end if 
+int_bool_test = line_tri_intersect_bool(t1_v2,t1_v3,t2_v1,t2_v2,t2_v3)
+if (int_bool_test == 1) then 
+    int_bool = 1
+    return 
+end if 
+int_bool_test = line_tri_intersect_bool(t1_v3,t1_v1,t2_v1,t2_v2,t2_v3)
+if (int_bool_test == 1) then 
+    int_bool = 1
+    return 
+end if 
+
+!Edges of triangle 2 with triangle 1 
+int_bool_test = line_tri_intersect_bool(t2_v1,t2_v2,t1_v1,t1_v2,t1_v3)
+if (int_bool_test == 1) then 
+    int_bool = 1
+    return 
+end if 
+int_bool_test = line_tri_intersect_bool(t2_v2,t2_v3,t1_v1,t1_v2,t1_v3)
+if (int_bool_test == 1) then 
+    int_bool = 1
+    return 
+end if 
+int_bool_test = line_tri_intersect_bool(t2_v3,t2_v1,t1_v1,t1_v2,t1_v3)
+if (int_bool_test == 1) then 
+    int_bool = 1
+    return 
+end if 
+return 
+end function tri_tri_intersect_bool
 
 
 
@@ -1011,22 +1065,165 @@ end function ang_vec2vec
 
 
 
-!Wendland C2 function ===========================
-function wendlandc2(d,Rs) result(W)
+!Check geometry for self intersections function ===========================
+function is_self_intersecting(surface_mesh,cm3dopt) result(is_selfintersecting)
 implicit none 
 
 !Variables - Import
-real(dp) :: d,Rs,W
+logical :: is_selfintersecting
+type(surface_data) :: surface_mesh
+type(cm3d_options) :: cm3dopt
 
-!Set function value 
-d = d/Rs 
-if (d .GE. 1.0d0) then 
-    W = 0.0d0 
-else
-    W = ((1.0d0 - d)**4)*(4.0d0*d + 1.0d0)
-end if 
+!Variables - Local 
+integer(in) :: ii,jj,nn,kk,ee,vv,aa
+integer(in) :: Ndim,node_minDIVsize,nselected,trival,etgt,Nface_exclude
+integer(in) :: vtgt,fadj,ftgt,exist
+integer(in), dimension(:), allocatable:: node_select,face_exclude
+real(dp) :: global_target_pad,cpadSZ,zxmin,zxmax,zymin,zymax,zzmin,zzmax
+real(dp) :: v1(3),v2(3),v3(3),vt1(3),vt2(3),vt3(3),Nf(3)
+real(dp), dimension(:,:), allocatable :: tvtx
+type(tree_data) :: surface_adtree
+
+!Initialise intersection state
+is_selfintersecting = .false.
+
+!Set global object bounding box padding for adtree node containement
+global_target_pad = 0.0d0
+
+!Adtree number of dimensions (4)
+Ndim = 6
+
+!Set minimum divisible node size within the AD tree 
+node_minDIVsize = cm3dopt%ADTminNodedivsize
+
+!Construct 6D bounding box coordinates for each face in the surface mesh
+allocate(tvtx(surface_mesh%nfcs,6))
+do ii=1,surface_mesh%nfcs
+    tvtx(ii,1) = minval(surface_mesh%vertices(surface_mesh%connectivity(ii,:),1)) !xmin
+    tvtx(ii,2) = minval(surface_mesh%vertices(surface_mesh%connectivity(ii,:),2)) !ymin
+    tvtx(ii,3) = minval(surface_mesh%vertices(surface_mesh%connectivity(ii,:),3)) !zmin
+    tvtx(ii,4) = maxval(surface_mesh%vertices(surface_mesh%connectivity(ii,:),1)) !xmax
+    tvtx(ii,5) = maxval(surface_mesh%vertices(surface_mesh%connectivity(ii,:),2)) !ymax
+    tvtx(ii,6) = maxval(surface_mesh%vertices(surface_mesh%connectivity(ii,:),3)) !zmax
+end do
+
+!Construct ad_tree
+call build_ADtree(surface_adtree,ndim,cm3dopt%ADTmax_depth,node_minDIVsize,tvtx,global_target_pad,cm3dopt%dispt)
+
+!Allocate excluded face array 
+Nface_exclude = 3*maxval(surface_mesh%valence) + 7
+allocate(face_exclude(Nface_exclude))
+face_exclude(:) = 0
+Nface_exclude = 0 
+
+!Check each face for self intersections with all but the faces directly connected by edges and vertices  
+allocate(node_select(surface_adtree%nnode))
+node_select(:) = 0 
+nselected = 0 
+do ii=1,surface_mesh%nfcs
+
+    !Base face vertices
+    v1(:) =  surface_mesh%vertices(surface_mesh%connectivity(ii,1),:)
+    v2(:) =  surface_mesh%vertices(surface_mesh%connectivity(ii,2),:)
+    v3(:) =  surface_mesh%vertices(surface_mesh%connectivity(ii,3),:)
+
+    !Select faces to exclude
+    Nface_exclude = 1
+    face_exclude(:) = 0
+    face_exclude(1) = ii 
+    do vv=1,3 !from vertices
+        vtgt = surface_mesh%connectivity(ii,vv)
+        do aa=1,surface_mesh%valence(vtgt)
+            fadj = surface_mesh%V2F(vtgt,aa)
+            exist = 0 
+            do jj=1,Nface_exclude
+                if (face_exclude(jj) == fadj) then
+                    exist = 1
+                    exit 
+                end if 
+            end do 
+            if (exist == 0) then 
+                Nface_exclude = Nface_exclude + 1
+                face_exclude(Nface_exclude) = fadj
+            end if 
+        end do 
+    end do
+    do ee=1,3 !from edges
+        etgt = surface_mesh%F2E(ii,ee)
+        do aa=1,2
+            fadj =  surface_mesh%E2F(etgt,aa)
+            exist = 0 
+            do jj=1,Nface_exclude
+                if (face_exclude(jj) == fadj) then
+                    exist = 1
+                    exit 
+                end if 
+            end do 
+            if (exist == 0) then 
+                Nface_exclude = Nface_exclude + 1
+                face_exclude(Nface_exclude) = fadj
+            end if 
+        end do 
+    end do 
+
+    !Build face normal vector 
+    Nf = newell_normal(3_in,surface_mesh%connectivity(ii,:),surface_mesh%vertices)
+
+    !Padding size 
+    cpadSZ = norm2(Nf)*0.005d0
+
+    !Intersection bounding box
+    zxmin = minval(surface_mesh%vertices(surface_mesh%connectivity(ii,:),1)) - cpadSZ !tgt bounding box -> xmin
+    zxmax = maxval(surface_mesh%vertices(surface_mesh%connectivity(ii,:),1)) + cpadSZ !tgt bounding box -> xmax
+    zymin = minval(surface_mesh%vertices(surface_mesh%connectivity(ii,:),2)) - cpadSZ !tgt bounding box -> ymin
+    zymax = maxval(surface_mesh%vertices(surface_mesh%connectivity(ii,:),2)) + cpadSZ !tgt bounding box -> ymax
+    zzmin = minval(surface_mesh%vertices(surface_mesh%connectivity(ii,:),3)) - cpadSZ !tgt bounding box -> zmin
+    zzmax = maxval(surface_mesh%vertices(surface_mesh%connectivity(ii,:),3)) + cpadSZ !tgt bounding box -> zmax
+
+    !Identify any face bounding boxes that may overlap the base face 
+    call search_ADtree(nselected,node_select,surface_adtree,zxmin,zxmax,zymin,zymax,zzmin,zzmax)
+    
+    !Check for intersection with all faces selected 
+    do nn=1,nselected
+        do kk=1,surface_adtree%tree(node_select(nn))%nentry
+
+            !Selected face
+            ftgt = surface_adtree%tree(node_select(nn))%entry(kk)
+
+            !Face vertices
+            vt1(:) =  surface_mesh%vertices(surface_mesh%connectivity(ftgt,1),:)
+            vt2(:) =  surface_mesh%vertices(surface_mesh%connectivity(ftgt,2),:)
+            vt3(:) =  surface_mesh%vertices(surface_mesh%connectivity(ftgt,3),:)
+
+            !If this is not excluded 
+            exist = 0 
+            do jj=1,Nface_exclude
+                if (face_exclude(jj) == ftgt) then 
+                    exist = 1
+                    exit 
+                end if 
+            end do 
+            if (exist == 0) then 
+
+                !Check for intersections between faces ftgt and ii 
+                trival = tri_tri_intersect_bool(vt1,vt2,vt3,v1,v2,v3)
+
+                !If an intersection set tag and exit 
+                if (trival .NE. 0) then 
+                    is_selfintersecting = .true.
+                    exit 
+                end if 
+            end if 
+        end do 
+    end do 
+
+    !Exit if self intersection found 
+    if (is_selfintersecting) then 
+        exit 
+    end if 
+end do 
 return 
-end function wendlandc2
+end function is_self_intersecting
 
 
 end module cellmesh3d_geometry_mod

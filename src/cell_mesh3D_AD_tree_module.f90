@@ -2,14 +2,12 @@
 !Max Wood - mw16116@bristol.ac.uk
 !Univeristy of Bristol - Department of Aerospace Engineering
 
-!Version 4.1
-!Updated 27-02-2023
+!Version 4.2
+!Updated 12-02-2024
 
 !Module 
 module cellmesh3d_adtree_mod
 use cellmesh3d_data_mod
-! use ISO_FORTRAN_ENV, only: in=>int64
-! use ISO_FORTRAN_ENV, only: dp=>real64 
 implicit none
 
 !ADTree derived types =>
@@ -390,7 +388,7 @@ do rr=1,max_depth*ndim
 
     !Display
     if (disp_toggle == 1) then
-        write(*,'(A,I3,A,I2,A)') '    level :', rr ,' {',cindex,'}'
+        write(*,'(A,I0,A,I0,A)') '    level -> ', rr ,' {dimension ',cindex,'}'
     end if 
     
     !Update current child search index list
@@ -421,7 +419,7 @@ end do
 
 !Exit display
 if (disp_toggle == 1) then
-    write(*,'(A,I6,A)') '    {constructed ',childins-1,' nodes}'
+    write(*,'(A,I0,A)') '    {constructed ',childins-1,' nodes}'
 end if 
 return
 end subroutine ad_tree_construct

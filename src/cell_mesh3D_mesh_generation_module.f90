@@ -54,7 +54,7 @@ global_target_pad = 0.0d0
 Ndim = 6
 
 !Set minimum divisible node size within the AD tree 
-node_minDIVsize = 5
+node_minDIVsize = cm3dopt%ADTminNodedivsize
 
 !Initialise failure tag
 cm3dfailure = 0
@@ -115,7 +115,7 @@ do ii=1,surface_mesh%nfcs
 end do
 
 !Construct ad_tree
-call build_ADtree(surface_adtree,Ndim,cm3dopt%max_depth,node_minDIVsize,tvtx,global_target_pad,cm3dopt%dispt)
+call build_ADtree(surface_adtree,Ndim,cm3dopt%ADTmax_depth,cm3dopt%ADTminNodedivsize,tvtx,global_target_pad,cm3dopt%dispt)
 
 !Octree construction -------------------------------------------------------
 if (cm3dopt%dispt == 1) then

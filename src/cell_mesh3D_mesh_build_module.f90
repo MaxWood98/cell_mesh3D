@@ -2,8 +2,8 @@
 !Max Wood - mw16116@bristol.ac.uk
 !Univeristy of Bristol - Department of Aerospace Engineering
 
-!Version 6.1
-!Updated 24-10-2023
+!Version 6.2
+!Updated 02-12-2023
 
 !Module
 module cellmesh3d_mesh_build_mod
@@ -171,7 +171,7 @@ do ff=1,surface_mesh%nfcs
     tri_clip_sm(ff)%edges(:,:) = 0 
 end do 
 
-!Set clipped surface mesh vertex index
+!Set initial clipped surface mesh vertex index
 vtx_idx_smesh = surface_mesh%nvtx
 
 !Display
@@ -231,7 +231,7 @@ if (cm3dopt%dispt == 1) then
     write(*,'(A,I0,A)') '    {maximum intersections on a surface triangle = ',maxval(tri_clip_sm(:)%nvtx),'}'
 end if
 
-!Set maximum intersection count on a surface triangle 
+!Set maximum possible intersection count on a surface triangle 
 cm3dopt%stnintmax = 3*(maxval(vtx_clip_sm(:)%nintersect) + maxval(edge_clip_sm(:)%nint)) + maxval(tri_clip_sm(:)%nvtx)
 
 !Debug export full mesh =======================
@@ -876,7 +876,7 @@ do ff=1,surface_mesh%nfcs
             end if 
         end do 
 
-        !Assign triangle edge end cell containements 
+        !Assign triangle edge end cell containments 
         eend_cell(:,:) = 0 
         do ee=1,3 !Triangle edges 
             etgt = surface_mesh%F2E(ff,ee)
@@ -1100,7 +1100,7 @@ do ff=1,surface_mesh%nfcs
                 end do 
             end if 
 
-            !Build clipped face if there are at least three clipped edges within this cell and all are not sub-edges from the same pareent surface edge
+            !Build clipped face if there are at least three clipped edges within this cell and all are not sub-edges from the same parent surface edge
             !- if zero nedge_tface then this face clips the cell on a face vertex or cell edge so no clipping to this cell is required 
             !- if one nedge_tface then one edge of this face is parallel and coincident with an edge or face of the cell so no clipping to this cell is required 
             if ((nedge_tface .GE. 3) .AND. (diff_parent == 1)) then 
@@ -1142,9 +1142,9 @@ do ff=1,surface_mesh%nfcs
                                     surface_mesh%vertices_full(edges_on_tri(ee,2),:)
                     end do 
                     close(11)
-                    if (ff == 709) then 
-                        stop 
-                    end if 
+                    ! if (ff == 709) then 
+                    !     stop 
+                    ! end if 
                     cycle
                 end if
 
@@ -2127,7 +2127,7 @@ type(cm3d_options) :: cm3dopt
 !Variables - Local
 integer(in) :: ff,ee,ii,kk,nn,aa,vv
 integer(in) :: nint_tri_tot,etgt,nftriint,ftgt,vtgt,nint_face,ie,iv,intnew,ev1,ev2,vvejoined
-integer(in) :: faces_on_tri(surface_mesh%nfcs),ftselected(volume_mesh_full%nface)
+integer(in) :: faces_on_tri(8*cm3dopt%max_int_size),ftselected(volume_mesh_full%nface)
 integer(in) :: int_from_face(cm3dopt%stnintmax+1,3)
 real(dp) :: intloc(cm3dopt%stnintmax+1,3)
 

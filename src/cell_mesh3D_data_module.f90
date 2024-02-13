@@ -2,8 +2,8 @@
 !Max Wood - mw16116@bristol.ac.uk
 !Univeristy of Bristol - Department of Aerospace Engineering
 
-!Version 2.2
-!Updated 24-10-2023
+!Version 2.3
+!Updated 12-02-2024
 
 !Module
 module cellmesh3d_data_mod
@@ -115,15 +115,15 @@ end type lsurface
 
 !Options data type
 type cm3d_options
-    character(len=:), allocatable :: iopath,optpath,surfacename,surface_dir,boundary_dir,meshinout,meshfrmat,mode
+    character(len=:), allocatable :: iopath,optpath,surfacename,surface_dir,boundary_dir,meshinout,meshfrmat,mode,glink_type
     integer(in) :: Nrefine,NrefineB,Ncell_max,Nrefine_flood_i,Nrefine_flood_f,Nrefine_flood_b,meshtype,surfRcurvNpts
-    integer(in) :: normDconv,NintEmax,glink_con,glink_nnn,glink_nsmooth,max_int_size,surf_force_simplify
-    integer(in) :: max_depth,dispt,nlpflood,nlpsmooth,surface_type,set_customBCs,remFFzones,zbndsiter
-    integer(in) :: Nlevel,Nsmooth_Norm,Nsmooth_front,Ls_smooth_front,Nsstype,Nzone_cBC,remISzones,stnintmax
+    integer(in) :: normDconv,NintEmax,glink_con,glink_nnn,glink_nsmooth,max_int_size,surf_force_simplify,ADTminNodedivsize
+    integer(in) :: ADTmax_depth,dispt,nlpflood,nlpsmooth,surface_type,set_customBCs,remFFzones,zbndsiter,set_mbounds
+    integer(in) :: Nlevel,Nsmooth_Norm,Nsmooth_front,Ls_smooth_front,Nsstype,Nzone_cBC,remISzones,remNCzones,stnintmax
     integer(in) :: bc_xmin,bc_xmax,bc_ymin,bc_ymax,bc_zmin,bc_zmax
     integer(in), dimension(:), allocatable :: BC_zone_bc
-    real(dp) :: ad_padding,far_field_bound,FminArea,CminVol,surfRcurvM,RBF_relax
-    real(dp) :: dsolve_kd,dsolve_cfl,dsolve_resconv,zangbnd,zlenmax,zlenmin
+    real(dp) :: ADTpadding,far_field_bound,FminArea,CminVol,surfRcurvM,RBF_relaxP,RBF_relaxD,RBF_rsup
+    real(dp) :: dsolve_kd,dsolve_cfl,dsolve_resconv,zangbnd,zlenmax,zlenmin,elenpad
     real(dp) :: cell1h,cellh_gr,om_offset_x,om_offset_y,om_offset_z,intcointol,baryloctol
     real(dp), dimension(:,:), allocatable :: BC_zone_coords
     real(dp) :: mesh_xmin,mesh_xmax,mesh_ymin,mesh_ymax,mesh_zmin,mesh_zmax

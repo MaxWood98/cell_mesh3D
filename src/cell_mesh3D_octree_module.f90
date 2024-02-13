@@ -375,12 +375,12 @@ do rr=1,cm3dopt%Nrefine + cm3dopt%NrefineB
             if (ot_mesh%cell_child(cc,1) == 0) then 
 
                 !Intersection bounding box
-                zxmin = ot_mesh%vtx(ot_mesh%cell_vcnr(cc,1),1) - cpadSZ*cm3dopt%ad_padding !tgt bounding box -> xmin
-                zxmax = ot_mesh%vtx(ot_mesh%cell_vcnr(cc,7),1) + cpadSZ*cm3dopt%ad_padding !tgt bounding box -> xmax
-                zymin = ot_mesh%vtx(ot_mesh%cell_vcnr(cc,1),2) - cpadSZ*cm3dopt%ad_padding !tgt bounding box -> ymin
-                zymax = ot_mesh%vtx(ot_mesh%cell_vcnr(cc,7),2) + cpadSZ*cm3dopt%ad_padding !tgt bounding box -> ymax
-                zzmin = ot_mesh%vtx(ot_mesh%cell_vcnr(cc,1),3) - cpadSZ*cm3dopt%ad_padding !tgt bounding box -> zmin
-                zzmax = ot_mesh%vtx(ot_mesh%cell_vcnr(cc,7),3) + cpadSZ*cm3dopt%ad_padding !tgt bounding box -> zmax
+                zxmin = ot_mesh%vtx(ot_mesh%cell_vcnr(cc,1),1) - cpadSZ*cm3dopt%ADTpadding !tgt bounding box -> xmin
+                zxmax = ot_mesh%vtx(ot_mesh%cell_vcnr(cc,7),1) + cpadSZ*cm3dopt%ADTpadding !tgt bounding box -> xmax
+                zymin = ot_mesh%vtx(ot_mesh%cell_vcnr(cc,1),2) - cpadSZ*cm3dopt%ADTpadding !tgt bounding box -> ymin
+                zymax = ot_mesh%vtx(ot_mesh%cell_vcnr(cc,7),2) + cpadSZ*cm3dopt%ADTpadding !tgt bounding box -> ymax
+                zzmin = ot_mesh%vtx(ot_mesh%cell_vcnr(cc,1),3) - cpadSZ*cm3dopt%ADTpadding !tgt bounding box -> zmin
+                zzmax = ot_mesh%vtx(ot_mesh%cell_vcnr(cc,7),3) + cpadSZ*cm3dopt%ADTpadding !tgt bounding box -> zmax
 
                 !Identify any triangle bounding boxes that may overlap the cell 
                 call search_ADtree(nselected,node_select,surface_adtree,zxmin,zxmax,zymin,zymax,zzmin,zzmax)

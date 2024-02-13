@@ -2,8 +2,8 @@
 !Max Wood - mw16116@bristol.ac.uk
 !Univeristy of Bristol - Department of Aerospace Engineering
 
-!Version 1.2
-!Updated 30-10-2023
+!Version 2.1
+!Updated 13-02-2023
 
 !Main
 program cell_mesh3d
@@ -11,11 +11,15 @@ use cellmesh3d_mesh_generation_mod
 implicit none
 
 !Variables
+logical :: is_selfintersecting
 integer(in) :: cm3dfailure
 type(cm3d_options) :: cm3dopt
 type(surface_data) :: surface_mesh
 type(vol_mesh_data) :: volume_mesh
 real(dp), dimension(:,:), allocatable :: gradient_vol,gradient_surf
+
+!Set option defaults 
+call set_default_options(cm3dopt)
 
 !Get command arguments 
 call get_process_arguments(cm3dopt)
@@ -29,7 +33,7 @@ if (cm3dopt%dispt == 1) then
     write(*,'(A)')'+--------------------------------------------+'
     write(*,'(A)')'|                Cell Mesh 3D                |'
     write(*,'(A)')'|         3D Cut-Cell Mesh Generator         |'
-    write(*,'(A)')'|        Version 0.2.1 || 07/11/2023         |'
+    write(*,'(A)')'|        Version 0.4.1 || 13/02/2024         |'
     write(*,'(A)')'|                 Max Wood                   |'
     write(*,'(A)')'|           University of Bristol            |'
     write(*,'(A)')'|    Department of Aerospace Engineering     |'
@@ -38,7 +42,37 @@ if (cm3dopt%dispt == 1) then
 end if
 
 !Process requested mode 
-if (cm3dopt%mode == 'mesh') then !mesh generation mode
+if (cm3dopt%mode == 'check') then !geometry check mode 
+
+    !Display
+    if (cm3dopt%dispt == 1) then
+        write(*,'(A)') '         == geometry checking mode =='
+    end if
+
+    !Load object surface data
+    if (cm3dopt%dispt == 1) then
+        write(*,'(A)') '--> importing geometry data'
+    end if
+    call import_surface_geometry(surface_mesh,cm3dopt)
+
+    !Preprocess surface geometry 
+    if (cm3dopt%dispt == 1) then
+        write(*,'(A)') '--> preprocessing geometry data'
+    end if
+    call preprocess_surface_mesh(surface_mesh,cm3dopt)
+
+    !Check for self intersections 
+    if (cm3dopt%dispt == 1) then
+        write(*,'(A)') '--> testing for self intersections'
+    end if
+    is_selfintersecting = is_self_intersecting(surface_mesh,cm3dopt)
+    if (cm3dopt%dispt == 1) then
+        write(*,'(A,L,A)') '    {is self intersecting: ',is_selfintersecting,'}'
+    end if
+    
+    !Export check results
+    call export_geometry_check(is_selfintersecting,cm3dopt)
+elseif (cm3dopt%mode == 'mesh') then !mesh generation mode
 
     !Display
     if (cm3dopt%dispt == 1) then
@@ -101,7 +135,12 @@ elseif (cm3dopt%mode == 'project') then !volume to surface gradient projection m
     if (cm3dopt%dispt == 1) then
         write(*,'(A)') '--> projecting volume flow gradients to the surface geometry'
     end if
-    call project_gradients(gradient_surf,gradient_vol,volume_mesh,surface_mesh,6_in,5_in,0.0d0,cm3dopt)
+    if (cm3dopt%glink_type == 'rbf') then 
+        call project_gradients_RBF(gradient_surf,gradient_vol,volume_mesh,surface_mesh,6_in,&
+        cm3dopt%ADTminNodedivsize,0.0d0,cm3dopt)
+    elseif (cm3dopt%glink_type == 'int') then 
+
+    end if 
 
     !Export surface projected gradients 
     if (cm3dopt%dispt == 1) then
